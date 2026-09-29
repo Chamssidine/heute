@@ -64,8 +64,8 @@ as $$
   end
 $$;
 
-revoke execute on function public.can_write_shifts_of(uuid) from public, anon;
-grant execute on function public.can_write_shifts_of(uuid) to authenticated;
+-- Appelée seulement par les RPC SECURITY DEFINER : pas d'accès direct pour les clients.
+revoke execute on function public.can_write_shifts_of(uuid) from public, anon, authenticated;
 
 -- RPC -------------------------------------------------------------------------
 
@@ -112,6 +112,9 @@ begin
         note = excluded.note
   returning id into v_id;
 
+  -- Évite qu'une écriture directe suivante dans la même transaction hérite de la raison.
+  perform set_config('app.reason', '', true);
+
   return v_id;
 end
 $$;
@@ -136,6 +139,7 @@ begin
 
   perform set_config('app.reason', btrim(p_reason), true);
   delete from public.shifts where id = p_id;
+  perform set_config('app.reason', '', true);
 end
 $$;
 
