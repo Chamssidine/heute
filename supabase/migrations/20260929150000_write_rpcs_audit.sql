@@ -55,10 +55,12 @@ security definer
 set search_path = ''
 as $$
   select case public.current_app_role()
-    when 'admin' then exists (select 1 from public.employees e where e.id = p_employee_id)
+    when 'admin' then exists (
+      select 1 from public.employees e where e.id = p_employee_id and e.active
+    )
     when 'kitchen_lead' then exists (
       select 1 from public.employees e
-      where e.id = p_employee_id and e.department = 'kueche'
+      where e.id = p_employee_id and e.department = 'kueche' and e.active
     )
     else false
   end

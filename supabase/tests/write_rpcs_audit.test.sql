@@ -1,5 +1,5 @@
 begin;
-select plan(24);
+select plan(26);
 
 -- Identifiants : employees b, room_tasks e, rooms d ; dates 2030-02-xx pour ne pas
 -- croiser les autres tests. a2 admin, a3 Koch, a4 Küchenleitung, a5 Housekeeping.
@@ -17,6 +17,10 @@ values
   ('00000000-0000-0000-0000-0000000000b3', '00000000-0000-0000-0000-0000000000a3', 'Test Koch', 'kueche', 'staff', 'VZ'),
   ('00000000-0000-0000-0000-0000000000b4', '00000000-0000-0000-0000-0000000000a4', 'Test Leitung', 'kueche', 'kitchen_lead', 'VZ'),
   ('00000000-0000-0000-0000-0000000000b5', '00000000-0000-0000-0000-0000000000a5', 'Test Zimmer', 'housekeeping', 'staff', 'VZ');
+
+-- b6 : employé Küche désactivé (sans compte).
+insert into public.employees (id, display_name, department, role, contract, active)
+values ('00000000-0000-0000-0000-0000000000b6', 'Test Inaktiv', 'kueche', 'staff', 'VZ', false);
 
 insert into public.rooms (id, number, floor, beds)
 values ('00000000-0000-0000-0000-0000000000d1', 'T-101', 1, 2);
@@ -56,8 +60,20 @@ select lives_ok(
   'admin crée un service Küche'
 );
 
+select throws_ok(
+  $$select public.save_shift('00000000-0000-0000-0000-0000000000b6', '2030-02-07', 'normal', 480::smallint, 960::smallint, null, null, 30::smallint, null, 'Test')$$,
+  'HT002', 'forbidden',
+  'admin ne peut pas planifier un employé désactivé'
+);
+
 -- Küchenleitung : Küche seulement ---------------------------------------------
 set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a4';
+
+select throws_ok(
+  $$select public.save_shift('00000000-0000-0000-0000-0000000000b6', '2030-02-07', 'normal', 480::smallint, 960::smallint, null, null, 30::smallint, null, 'Test')$$,
+  'HT002', 'forbidden',
+  'la Küchenleitung ne peut pas planifier un employé désactivé'
+);
 
 select throws_ok(
   $$select public.save_shift('00000000-0000-0000-0000-0000000000b5', '2030-02-05', 'normal', 480::smallint, 900::smallint, null, null, 30::smallint, null, 'Test')$$,
