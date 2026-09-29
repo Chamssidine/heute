@@ -1,3 +1,4 @@
+import { antigravity } from "./antigravity.ts";
 import { claude } from "./claude.ts";
 import { codex } from "./codex.ts";
 import { gemini } from "./gemini.ts";
@@ -5,7 +6,7 @@ import { manual } from "./manual.ts";
 import type { CliAdapter } from "./types.ts";
 
 // Registry: to support a new LLM CLI, add its adapter here.
-const ADAPTERS: Record<string, CliAdapter> = { claude, gemini, codex, manual };
+const ADAPTERS: Record<string, CliAdapter> = { antigravity, claude, gemini, codex, manual };
 
 export function adapterFor(id: string): CliAdapter {
   const adapter = ADAPTERS[id];

@@ -13,7 +13,7 @@ export interface CliSettings {
 export interface LaunchSpec {
   command: string;
   args: string[];
-  // The prompt is always sent on stdin: no quoting issues on Windows.
+  // Sent on stdin when the CLI reads it there (no quoting issues); empty when the adapter passes the prompt as an argument.
   stdinPrompt: string;
 }
 

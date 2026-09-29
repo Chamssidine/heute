@@ -29,9 +29,19 @@ Puis ouvrir http://127.0.0.1:4000. Le serveur n'écoute que sur la machine local
    - ou **Renvoyer à l'agent**, avec une note si besoin ;
    - ou **Relire** avec un autre relecteur (Claude ou Codex).
 
-## Agents dans un IDE (Antigravity)
+## Antigravity CLI (`agy`) : agents L et U
 
-Certains agents ne tournent que dans un IDE, comme Gemini dans Antigravity. Ils utilisent l'adaptateur `manual` : l'outil ne lance rien lui-même.
+L et U tournent avec la CLI d'Antigravity (`agy -p`), lancée par l'outil comme Claude. Aucun copier-coller.
+
+- **Fichiers :** l'agent les modifie grâce à `--mode accept-edits`.
+- **Commandes shell (git, npm, gh) :** en mode non interactif, agy ne peut pas demander la permission. Il refuse donc toute commande qui ne correspond pas à une règle `permissions.allow` de `%USERPROFILE%\.gemini\antigravity-cli\settings.json`. Les commandes refusées apparaissent dans le log de l'agent (« refusé : command »).
+- **Relecteur `gemini` :** il tourne en `--mode plan`, en lecture seule.
+
+Ne pas utiliser `--dangerously-skip-permissions`, qui autorise tout.
+
+## Agents dans un IDE sans CLI (mode manuel)
+
+Si un agent ne tourne que dans un IDE, il utilise l'adaptateur `manual` (CLI `antigravity-ide` dans `config.json`) : l'outil ne lance rien lui-même.
 
 1. **Préparer la tâche** : l'outil choisit l'issue, remet le worktree de l'agent sur `origin/main` et affiche le prompt.
 2. Ouvre ce worktree dans l'IDE (par exemple `C:\dev\heute-l` pour L), puis **Copier le prompt** et colle-le dans une nouvelle conversation d'agent.
@@ -56,12 +66,13 @@ Les tâches en attente survivent à un redémarrage de l'orchestrateur.
 - **Ajouter un relecteur** : entrée dans `reviewers`.
 - **Permissions propres à une CLI** : `clis.<nom>.extraArgs.agent` / `.reviewer`, sans toucher au code.
 
-| Adaptateur | État                                                                                                               |
-| ---------- | ------------------------------------------------------------------------------------------------------------------ |
-| `claude`   | Vérifié. Agents limités par `--allowedTools` : pas de `gh pr merge`, pas de `gh api`.                              |
-| `manual`   | Pour les agents d'IDE (Antigravity) : prompt à coller, fin détectée sur GitHub.                                    |
-| `gemini`   | Non utilisable ici : Google refuse Gemini CLI avec un compte gratuit individuel. Il faut une clé `GEMINI_API_KEY`. |
-| `codex`    | Écrit d'après la documentation de `codex exec`, CLI non installée ici : à tester.                                  |
+| Adaptateur    | État                                                                                                                |
+| ------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `claude`      | Vérifié. Agents limités par `--allowedTools` : pas de `gh pr merge`, pas de `gh api`.                               |
+| `antigravity` | Vérifié (agy 1.0.12). Fichiers en `accept-edits`, commandes limitées par les règles du settings.json d'Antigravity. |
+| `manual`      | Pour les agents d'IDE sans CLI : prompt à coller, fin détectée sur GitHub.                                          |
+| `gemini`      | Non utilisable ici : Google refuse Gemini CLI avec un compte gratuit individuel. Il faut une clé `GEMINI_API_KEY`.  |
+| `codex`       | Écrit d'après la documentation de `codex exec`, CLI non installée ici : à tester.                                   |
 
 ## Sécurité
 
