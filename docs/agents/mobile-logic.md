@@ -4,6 +4,10 @@
 
 Fournir à l'interface des données fiables : session, cache hors ligne, hooks typés, temps réel, push.
 
+## Dossier de travail
+
+Tu travailles uniquement dans `C:\dev\heute-l` (worktree git dédié). Ne change jamais de branche ailleurs, et n'extrais jamais la branche d'un autre agent.
+
 ## Chemins autorisés (écriture)
 
 - `apps/mobile/src/lib/{supabase,query,network,realtime,push}/**`
