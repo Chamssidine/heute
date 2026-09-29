@@ -195,17 +195,32 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "current_app_role":
+            "audit_row_change":
+{ Args: Record<PropertyKey, never>; Returns: unknown
+                           },
+"can_write_shifts_of":
+{ Args: { "p_employee_id": string }; Returns: boolean
+                           },
+"current_app_role":
 { Args: Record<PropertyKey, never>; Returns: Database["public"]['Enums']["app_role"]
                            },
 "current_employee_id":
 { Args: Record<PropertyKey, never>; Returns: string
+                           },
+"delete_shift":
+{ Args: { "p_id": string,"p_reason": string }; Returns: undefined
                            },
 "is_valid_allergies":
 { Args: { "a": Json }; Returns: boolean
                            },
 "meal_totals":
 { Args: { "from_date": string,"to_date": string }; Returns: { "date": string,"meal": Database["public"]['Enums']["meal"],"total": number,"veg": number,"vegan": number,"mos": number,"allergies": number }[]
+                           },
+"save_shift":
+{ Args: { "p_break_min": number,"p_date": string,"p_employee_id": string,"p_end1": number,"p_end2": number,"p_note": string,"p_reason": string,"p_start1": number,"p_start2": number,"p_type": Database["public"]['Enums']["shift_type"] }; Returns: string
+                           },
+"set_task_status":
+{ Args: { "p_id": string,"p_status": Database["public"]['Enums']["task_status"] }; Returns: undefined
                            },
 "team_shifts":
 { Args: { "day": string }; Returns: { "employee_id": string,"display_name": string,"department": Database["public"]['Enums']["department"],"type": string,"start1": number,"end1": number,"start2": number,"end2": number }[]
