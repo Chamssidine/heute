@@ -57,6 +57,9 @@ export const strings = {
     inProgressStatus: "In Arbeit",
     doneStatus: "Erledigt",
     taskDoneUndo: "Aufgabe erledigt",
+    title: "Meine Aufgaben",
+    completedSection: (count: number) => `Erledigt (${count})`,
+    weekdaysShort: ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"],
   },
   meals: {
     noLunch: "Kein Mittagessen",
