@@ -1,6 +1,6 @@
 -- P1-07 : données de démo « Jugendherberge Musterberg » (PLAN §2.2).
 -- Tout est fictif. Les dates sont relatives à current_date : jamais de date fixe.
--- Fenêtre du Dienstplan : 21 jours avant aujourd'hui jusqu'à 7 jours après (29 jours).
+-- Fenêtre du Dienstplan : du 1er du mois courant jusqu'à 6 jours après la fin du mois.
 -- Repas, Speiseplan et tâches de ménage : aujourd'hui et les 6 jours suivants.
 --
 -- Comptes de démo (auth.users), tous avec le même mot de passe : demo-Passwort-2026
@@ -23,7 +23,8 @@ create temporary table seed_staff (
   end1 int not null
 );
 
--- start1/end1 : horaires réels à 8,5 h d'amplitude (IST = 8,00 h avec 30 min de pause).
+-- start1/end1 : horaires réels ; 8,5 h d'amplitude en VZ (IST = 8,00 h avec 30 min de pause),
+-- 4,5 h pour Emil en TZ (IST = 4,00 h, aligné sur son Soll).
 insert into seed_staff values
   (0, 'a0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000001',
    'karl.koch@musterberg.test', 'Karl Musterkoch', 'kueche', 'staff', 'VZ', 480, 10440, 360, 870),
@@ -36,7 +37,7 @@ insert into seed_staff values
   (4, 'a0000000-0000-4000-8000-000000000005', 'e0000000-0000-4000-8000-000000000005',
    'jonas.bettmuster@musterberg.test', 'Jonas Bettmuster', 'housekeeping', 'staff', 'VZ', 480, 10440, 480, 990),
   (5, 'a0000000-0000-4000-8000-000000000006', 'e0000000-0000-4000-8000-000000000006',
-   'emil.freiwillig@musterberg.test', 'Emil Freiwillig', 'bfd', 'staff', 'TZ', 240, 5220, 480, 990),
+   'emil.freiwillig@musterberg.test', 'Emil Freiwillig', 'bfd', 'staff', 'TZ', 240, 5220, 480, 750),
   (6, 'a0000000-0000-4000-8000-000000000007', 'e0000000-0000-4000-8000-000000000007',
    'clara.empfang@musterberg.test', 'Clara Empfangsmuster', 'rezeption', 'admin', 'VZ', 480, 10440, 690, 1200),
   (7, 'a0000000-0000-4000-8000-000000000008', 'e0000000-0000-4000-8000-000000000008',
@@ -96,7 +97,7 @@ select
 from (
   select
     s.employee_id, s.start1, s.end1,
-    current_date - 21 + n.n as d,
+    date_trunc('month', current_date)::date + n.n as d,
     case
       when s.idx = 0 and n.n in (4, 18) then 'td'
       when s.idx = 3 and n.n between 8 and 10 then 'urlaub'
@@ -106,7 +107,10 @@ from (
       else 'normal'
     end as type
   from seed_staff s
-  cross join generate_series(0, 28) as n(n)
+  cross join generate_series(
+    0,
+    (date_trunc('month', current_date) + interval '1 month')::date + 6 - date_trunc('month', current_date)::date
+  ) as n(n)
 ) x;
 
 -- Chambres : 40 sur 4 étages -------------------------------------------------
@@ -136,7 +140,7 @@ insert into seed_bookings values
   ('b0000000-0000-4000-8000-000000000001', 'MUSTERSCHULE/40001', 'Klasse 8b Musterschule',
    current_date - 2, current_date + 3, 24, '{"erdnuesse": 1}'),
   ('b0000000-0000-4000-8000-000000000002', 'DEMOCLUB/40002', 'Sportverein Demo',
-   current_date, current_date + 4, 18, '{}'),
+   current_date, current_date + 5, 18, '{}'),
   ('b0000000-0000-4000-8000-000000000003', 'TESTCHOR/40003', 'Chorfreizeit Test',
    current_date + 1, current_date + 6, 30, '{"milch": 2}'),
   ('b0000000-0000-4000-8000-000000000004', 'BEISPIEL-GMBH/40004', 'Firmenseminar Beispiel',
@@ -173,7 +177,8 @@ where b.arrival + n.n <= b.departure
   and not (m.meal = 'abend' and b.arrival + n.n = b.departure)
   and not (m.meal = 'mittag' and b.arrival + n.n = current_date + 5)
   and not (m.meal = 'abend' and b.arrival + n.n = current_date)
-  and not (m.meal = 'abend' and b.matchcode = 'DEMOCLUB/40002' and b.arrival + n.n = current_date + 4);
+  and not (m.meal = 'abend' and b.matchcode = 'DEMOCLUB/40002' and b.arrival + n.n = current_date + 4)
+  and not (m.meal = 'mittag' and b.matchcode = 'FERIENLAGER/40005' and b.arrival + n.n = current_date + 3);
 
 -- Abendessen aujourd'hui = 13 (démo, étape 3) : 8 + 3 + 2.
 insert into public.meal_counts (booking_id, date, meal, total, veg, vegan, mos)
