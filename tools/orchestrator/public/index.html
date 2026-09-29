@@ -171,10 +171,93 @@
         display: inline-flex;
         align-items: center;
         gap: 6px;
+        justify-content: center;
         white-space: nowrap;
+        transition:
+          background-color 0.15s,
+          border-color 0.15s,
+          color 0.15s,
+          transform 0.08s ease-out,
+          filter 0.15s;
       }
       button:hover {
         background: var(--surface-muted);
+      }
+      button:active:not(:disabled) {
+        transform: scale(0.96);
+      }
+      button.busy {
+        cursor: progress;
+      }
+      button.done {
+        background: var(--ok-bg) !important;
+        color: var(--ok-text) !important;
+        border-color: var(--ok-border) !important;
+      }
+      button.failed {
+        background: var(--bad-bg) !important;
+        color: var(--bad-text) !important;
+        border-color: var(--bad-border) !important;
+        animation: shake 0.35s;
+      }
+      .spinner {
+        width: 15px;
+        height: 15px;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @keyframes shake {
+        20%,
+        60% {
+          transform: translateX(-4px);
+        }
+        40%,
+        80% {
+          transform: translateX(4px);
+        }
+      }
+      @keyframes enter {
+        from {
+          opacity: 0;
+          transform: translateY(-6px);
+        }
+      }
+      @keyframes pop {
+        from {
+          opacity: 0;
+          transform: translateY(8px) scale(0.98);
+        }
+      }
+      @keyframes fade {
+        from {
+          opacity: 0;
+        }
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.25;
+          transform: scale(0.7);
+        }
+      }
+      @keyframes flash {
+        from {
+          background: var(--accent-bg);
+        }
       }
       button.primary {
         background: var(--accent);
@@ -229,6 +312,16 @@
         border: 1px solid var(--border);
         border-radius: 12px;
         padding: 12px 16px;
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s;
+      }
+      .item:hover {
+        border-color: var(--border-strong);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+      }
+      .item.enter {
+        animation: enter 0.28s ease-out both;
       }
       .item .ico {
         width: 34px;
@@ -297,9 +390,36 @@
         display: grid;
         gap: 6px;
         min-width: 0;
+        justify-content: stretch;
+        align-content: start;
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s,
+          transform 0.15s;
       }
       .agent:hover {
+        background: var(--surface);
         border-color: var(--border-strong);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.07);
+      }
+      .agent:active:not(:disabled) {
+        transform: translateY(0) scale(0.99);
+      }
+      .pill.live::before {
+        content: "";
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        margin-right: 6px;
+        vertical-align: 1px;
+        border-radius: 50%;
+        background: currentColor;
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+      .logline.fresh {
+        animation: flash 0.7s ease-out;
+        border-radius: 4px;
       }
       .avatar {
         width: 30px;
@@ -356,6 +476,15 @@
         font-size: 13px;
         display: grid;
         gap: 4px;
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s,
+          transform 0.15s;
+      }
+      a.card:hover {
+        border-color: var(--border-strong);
+        transform: translateY(-1px);
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.06);
       }
       .card .top {
         display: flex;
@@ -391,6 +520,12 @@
       }
       dialog::backdrop {
         background: rgba(10, 10, 8, 0.45);
+      }
+      dialog[open] {
+        animation: pop 0.18s ease-out;
+      }
+      dialog[open]::backdrop {
+        animation: fade 0.18s ease-out;
       }
       .dlg-head {
         padding: 18px 20px 6px;
@@ -457,14 +592,44 @@
         position: fixed;
         left: 50%;
         bottom: 20px;
-        transform: translateX(-50%);
+        transform: translate(-50%, 16px);
+        opacity: 0;
+        pointer-events: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
         background: var(--text);
         color: var(--bg);
         padding: 10px 16px;
         border-radius: 10px;
         font-size: 14px;
-        display: none;
+        font-weight: 500;
         max-width: calc(100vw - 32px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+        transition:
+          opacity 0.2s,
+          transform 0.2s ease-out;
+      }
+      #toast.show {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+      #toast.success {
+        background: var(--ok-text);
+        color: var(--surface);
+      }
+      #toast.error {
+        background: var(--bad-text);
+        color: var(--surface);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.001ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.001ms !important;
+        }
       }
       .badge {
         background: var(--bad-text);
@@ -559,6 +724,7 @@
         clipboard: '<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9z"/>',
         x: '<path d="M6 6l12 12M18 6 6 18"/>',
         refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+        check: '<path d="M5 12l5 5L19 7"/>',
       };
       function icon(name) {
         const span = h("span");
@@ -600,15 +766,58 @@
             : `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`;
       }
 
-      function toast(text) {
+      function toast(text, kind = "info") {
         const t = $("toast");
-        t.textContent = text;
-        t.style.display = "block";
+        const iconName = kind === "success" ? "check" : kind === "error" ? "alert" : null;
+        t.replaceChildren(...(iconName ? [icon(iconName)] : []), h("span", {}, text));
+        t.className = `show ${kind}`;
         clearTimeout(toast.timer);
-        toast.timer = setTimeout(() => (t.style.display = "none"), 4500);
+        toast.timer = setTimeout(() => (t.className = kind), 4500);
+      }
+
+      // The button that started an action shows its progress: spinner, then check or shake.
+      // It is caught at click time, so no call site has to pass it along.
+      let lastClicked = null;
+      document.addEventListener(
+        "click",
+        (e) => (lastClicked = e.target.closest?.("button") ?? null),
+        true,
+      );
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      function busy(btn) {
+        if (!btn || !btn.isConnected) return () => {};
+        const original = [...btn.childNodes];
+        btn.style.minWidth = `${btn.offsetWidth}px`;
+        btn.classList.add("busy");
+        btn.disabled = true;
+        btn.setAttribute("aria-busy", "true");
+        btn.replaceChildren(
+          h("span", { class: "spinner", "aria-hidden": "true" }),
+          h("span", { class: "sr-only" }, "En cours"),
+        );
+        return (ok) => {
+          btn.classList.remove("busy");
+          btn.removeAttribute("aria-busy");
+          btn.classList.add(ok ? "done" : "failed");
+          btn.replaceChildren(icon(ok ? "check" : "x"));
+          setTimeout(
+            () => {
+              btn.classList.remove("done", "failed");
+              btn.replaceChildren(...original);
+              btn.disabled = false;
+              btn.style.minWidth = "";
+            },
+            ok ? 1000 : 800,
+          );
+        };
       }
 
       async function act(action, body = {}, success = "C'est fait") {
+        const finish = busy(lastClicked);
+        lastClicked = null;
+        const started = Date.now();
+        // A spinner that flashes for 20 ms reads as a glitch: keep it visible a moment.
+        const settle = () => sleep(Math.max(0, 350 - (Date.now() - started)));
         try {
           const res = await fetch(`/api/actions/${action}`, {
             method: "POST",
@@ -616,14 +825,19 @@
             body: JSON.stringify(body),
           });
           const data = await res.json().catch(() => ({}));
+          await settle();
           if (!res.ok) {
-            toast(data.error ?? `Échec (${res.status})`);
+            finish(false);
+            toast(data.error ?? `Échec (${res.status})`, "error");
             return false;
           }
-          toast(success);
+          finish(true);
+          toast(success, "success");
           return true;
         } catch {
-          toast("L'orchestrateur ne répond pas");
+          await settle();
+          finish(false);
+          toast("L'orchestrateur ne répond pas", "error");
           return false;
         }
       }
@@ -643,7 +857,8 @@
               {
                 class: a.primary ? "primary" : a.danger ? "danger" : "",
                 onclick: async () => {
-                  if ((await a.run()) !== false) close();
+                  // Let the check mark show before the dialog goes away.
+                  if ((await a.run()) !== false) setTimeout(close, 500);
                 },
               },
               a.label,
@@ -1010,15 +1225,21 @@
         } catch {}
       }
 
+      // Only items that were not on screen before slide in: a re-render must not replay it.
+      let shownItems = new Set();
       function renderInbox() {
         const items = inboxItems();
+        const firstRender = shownItems.size === 0 && !renderInbox.done;
+        const keys = new Set(items.map((it) => `${it.kind}|${it.title}`));
         $("inbox-count").textContent = items.length ? `· ${items.length}` : "";
         $("inbox").replaceChildren(
           ...(items.length
             ? items.map((it) =>
                 h(
                   "div",
-                  { class: "item" },
+                  {
+                    class: `item${!firstRender && !shownItems.has(`${it.kind}|${it.title}`) ? " enter" : ""}`,
+                  },
                   h("span", { class: `ico tone-${it.tone}` }, icon(it.icon)),
                   h(
                     "div",
@@ -1039,6 +1260,8 @@
                 ),
               ]),
         );
+        shownItems = keys;
+        renderInbox.done = true;
       }
       const anyRunning = () => state.agents.some((a) => a.run) || state.reviewing !== undefined;
 
@@ -1049,9 +1272,10 @@
           return {
             label: `${a.run.kind === "fix" ? "corrige" : "travaille"} · ${duration(a.run.startedAt)}`,
             tone: "warn",
+            live: true,
           };
         const reviewed = state.prs.find((p) => p.agent === a.id && p.number === state.reviewing);
-        if (reviewed) return { label: "en relecture", tone: "accent" };
+        if (reviewed) return { label: "en relecture", tone: "accent", live: true };
         return { label: "libre", tone: "ok" };
       }
 
@@ -1084,7 +1308,14 @@
                   h("div", { style: "font-weight:600" }, a.name),
                   h("div", { class: "tiny faint" }, a.model),
                 ),
-                h("span", { class: `pill tone-${st.tone}`, style: "margin-left:auto" }, st.label),
+                h(
+                  "span",
+                  {
+                    class: `pill tone-${st.tone}${st.live ? " live" : ""}`,
+                    style: "margin-left:auto",
+                  },
+                  st.label,
+                ),
               ),
               h(
                 "div",
@@ -1094,11 +1325,22 @@
                 },
                 task,
               ),
-              last ? h("div", { class: "logline" }, last) : null,
+              last
+                ? h(
+                    "div",
+                    {
+                      class: `logline${lastLogLine[a.id] !== undefined && lastLogLine[a.id] !== last ? " fresh" : ""}`,
+                    },
+                    last,
+                  )
+                : null,
             );
           }),
         );
+        for (const a of state.agents) lastLogLine[a.id] = a.lines.at(-1);
       }
+      // Last log line seen per agent: a new one gets a short highlight.
+      const lastLogLine = {};
 
       function showAgent(a) {
         const fresh = agentById(a.id) ?? a;
