@@ -195,7 +195,13 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "is_valid_allergies":
+            "current_app_role":
+{ Args: Record<PropertyKey, never>; Returns: Database["public"]['Enums']["app_role"]
+                           },
+"current_employee_id":
+{ Args: Record<PropertyKey, never>; Returns: string
+                           },
+"is_valid_allergies":
 { Args: { "a": Json }; Returns: boolean
                            }
           }
