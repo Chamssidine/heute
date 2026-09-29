@@ -90,8 +90,9 @@ enabled = true
 # The maximum length in bytes of HTTP request headers. (default: 4096)
 # max_header_length = 4096
 
+# Désactivé : interface web inutile en v0.1 (économise téléchargement et mémoire Docker).
 [studio]
-enabled = true
+enabled = false
 # Port to use for Supabase Studio.
 port = 54423
 # External URL of the API server that frontend connects to.
@@ -101,8 +102,9 @@ openai_api_key = "env(OPENAI_API_KEY)"
 
 # Email testing server. Emails sent with the local dev setup are not actually sent - rather, they
 # are monitored, and you can view the emails that would have been sent from the web interface.
+# Désactivé : les comptes de démo se connectent par mot de passe, aucun e-mail à intercepter.
 [local_smtp]
-enabled = true
+enabled = false
 # Port to use for the email testing server web interface.
 port = 54424
 # Uncomment to expose additional ports for testing user applications that send emails.
@@ -111,8 +113,9 @@ port = 54424
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
+# Désactivé : aucun upload de fichiers en v0.1 (HK-05 photo = Could).
 [storage]
-enabled = true
+enabled = false
 # The maximum file size allowed (e.g. "5MB", "500KB").
 file_size_limit = "50MiB"
 
@@ -370,8 +373,9 @@ authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
 allow_dynamic_registration = false
 
+# Désactivé jusqu'à P4-05 (fonction notify) : le réactiver dans la PR de P4-05.
 [edge_runtime]
-enabled = true
+enabled = false
 # Supported request policies: `oneshot`, `per_worker`.
 # `per_worker` (default) — enables hot reload during local development.
 # `oneshot` — fallback mode if hot reload causes issues (e.g. in large repos or with symlinks).
