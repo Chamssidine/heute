@@ -4,6 +4,10 @@
 
 Une base Supabase sûre et testée, puis l'admin web pour la réception et la Küchenleitung.
 
+## Dossier de travail
+
+Tu travailles uniquement dans `C:\dev\heute-a` (worktree git dédié). Ne change jamais de branche ailleurs, et n'extrais jamais la branche d'un autre agent.
+
 ## Chemins autorisés (écriture)
 
 - `supabase/migrations/**`, `supabase/tests/**`, `supabase/seed.sql`

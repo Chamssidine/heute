@@ -4,6 +4,10 @@
 
 Des écrans lisibles en 10 secondes, utilisables d'une main, accessibles et conformes à `docs/design/`.
 
+## Dossier de travail
+
+Tu travailles uniquement dans `C:\dev\heute-u` (worktree git dédié). Ne change jamais de branche ailleurs, et n'extrais jamais la branche d'un autre agent.
+
 ## Chemins autorisés (écriture)
 
 - `apps/mobile/src/app/**`
