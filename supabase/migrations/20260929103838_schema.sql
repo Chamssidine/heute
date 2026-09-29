@@ -65,18 +65,21 @@ create table public.shifts (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (employee_id, date),
-  -- normal/td/sem : première plage obligatoire ; urlaub/krank/frei : aucune heure.
+  -- normal/td : première plage obligatoire ; sem : avec ou sans heures (les deux ou aucune) ;
+  -- urlaub/krank/frei : aucune heure.
   constraint shifts_hours_by_type check (
     case
-      when type in ('normal', 'td', 'sem') then start1 is not null and end1 is not null
+      when type in ('normal', 'td') then start1 is not null and end1 is not null
+      when type = 'sem' then (start1 is null) = (end1 is null)
       else start1 is null and end1 is null
     end
   ),
   constraint shifts_end1_after_start1 check (end1 > start1),
-  -- Deuxième plage : renseignée en entier et uniquement pour td.
+  -- Deuxième plage : renseignée en entier, uniquement pour td, après la première.
   constraint shifts_second_range check (
     (start2 is null and end2 is null)
-    or (start2 is not null and end2 is not null and end2 > start2 and type = 'td')
+    or (start2 is not null and end2 is not null and end2 > start2 and start2 >= end1
+        and type = 'td')
   )
 );
 
@@ -118,6 +121,7 @@ create table public.meal_counts (
   veg smallint not null default 0 check (veg >= 0),
   vegan smallint not null default 0 check (vegan >= 0),
   mos smallint not null default 0 check (mos >= 0),
+  constraint meal_counts_diets_within_total check (veg <= total and vegan <= total and mos <= total),
   allergies jsonb not null default '{}'::jsonb check (public.is_valid_allergies(allergies)),
   -- Consigne courte (colonne Info) : jamais de nom ni de diagnostic.
   note text check (char_length(note) <= 120),
@@ -190,6 +194,9 @@ create index shifts_date_idx on public.shifts (date);
 create index meal_counts_date_idx on public.meal_counts (date);
 create index audit_log_changed_at_idx on public.audit_log (changed_at desc);
 create index room_tasks_date_assigned_to_idx on public.room_tasks (date, assigned_to);
+-- Une seule tâche par chambre et par jour (les tâches de zone n'ont pas de chambre).
+create unique index room_tasks_date_room_id_key on public.room_tasks (date, room_id)
+  where room_id is not null;
 
 -- updated_at ----------------------------------------------------------------
 
@@ -211,3 +218,17 @@ create trigger set_updated_at before update on public.announcements
   for each row execute function extensions.moddatetime(updated_at);
 create trigger set_updated_at before update on public.push_tokens
   for each row execute function extensions.moddatetime(updated_at);
+
+-- RLS ----------------------------------------------------------------------
+-- Activée sans aucune policy : accès refusé par défaut. Les policies arrivent en P1-02.
+
+alter table public.employees enable row level security;
+alter table public.shifts enable row level security;
+alter table public.audit_log enable row level security;
+alter table public.bookings enable row level security;
+alter table public.meal_counts enable row level security;
+alter table public.menu_items enable row level security;
+alter table public.rooms enable row level security;
+alter table public.room_tasks enable row level security;
+alter table public.announcements enable row level security;
+alter table public.push_tokens enable row level security;
