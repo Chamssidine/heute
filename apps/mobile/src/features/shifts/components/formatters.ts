@@ -23,9 +23,12 @@ export function formatShiftDate(dateStr: string): string {
  */
 export function formatShiftMonth(monthStr: string): string {
   const parts = monthStr.split("-");
-  if (parts.length < 2) {
-    return monthStr;
+  if (parts.length !== 2) {
+    throw new Error(`Invalid shift month (expected YYYY-MM): ${monthStr}`);
   }
-  const monthIndex = Number(parts[1]) - 1;
-  return strings.shifts.monthNames[monthIndex] ?? monthStr;
+  const monthName = strings.shifts.monthNames[Number(parts[1]) - 1];
+  if (monthName === undefined) {
+    throw new Error(`Invalid shift month (expected YYYY-MM): ${monthStr}`);
+  }
+  return monthName;
 }

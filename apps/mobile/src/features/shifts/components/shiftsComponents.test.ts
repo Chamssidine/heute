@@ -29,8 +29,10 @@ describe("features/shifts/components (P2-04 [U])", () => {
       assert.equal(formatShiftMonth("2026-12"), "Dezember");
     });
 
-    it("renvoie la chaîne brute si le format n'est pas reconnu", () => {
-      assert.equal(formatShiftMonth("unknown"), "unknown");
+    it("lève une erreur explicite si le format ou le mois est invalide", () => {
+      assert.throws(() => formatShiftMonth("unknown"), /Invalid shift month/);
+      assert.throws(() => formatShiftMonth("2026-13"), /Invalid shift month/);
+      assert.throws(() => formatShiftMonth("2026-00"), /Invalid shift month/);
     });
   });
 
