@@ -29,7 +29,7 @@ Remplacer les plans papier de la réception par un écran « Heute » mobile mis
 | A5 | Housekeeping « modifie le statut de ses tâches » : RLS ne restreint pas les **colonnes** | Un employé pourrait changer `assigned_to` | Écriture du statut via **RPC** `set_task_status()` ; UPDATE direct réservé à l'admin |
 | A6 | Küchenleitung modifie menu + Dienstplan Küche, mais aucun écran mobile d'édition | Pas d'interface pour ce rôle | Küchenleitung accède à l'admin web avec un périmètre réduit (garanti par RLS) |
 | A7 | Lien magique : le SMTP par défaut de Supabase est très limité et les e-mails fictifs ne reçoivent rien | Connexion impossible pendant la démo | Démo = **e-mail + mot de passe** (comptes seedés). Lien magique/OTP = *Should* (SMTP dédié + deep link). PIN = hors v0.1 |
-| A8 | « Test immédiat avec Expo Go » : Expo Go ne gère plus les push distants sur Android depuis le SDK 53 (à revérifier pour le SDK courant) | NT-01/02 impossibles dans Expo Go Android | **Development build EAS** dès la phase 0 ; iOS via Expo Go = best effort (§10, R2) |
+| A8 | « Test immédiat avec Expo Go » : Expo Go ne supporte pas les push distants (Android **et** iOS, vérifié en P0-01, ADR 0001) | NT-01/02 impossibles dans Expo Go | **Development build EAS** dès la phase 0 ; iOS via Expo Go = best effort (§10, R2) |
 | A9 | `room_tasks.zone` (Bäder, Schlafzimmer) sans chambre | `room_id` obligatoire bloque les tâches de zone | `room_id` nullable + contrainte `room_id IS NOT NULL OR zone IS NOT NULL` |
 | A10 | `shift_changes.shift_id` en clé étrangère | Supprimer un service efface ou casse son historique | `audit_log` stocke un instantané (`row_id`, `old`, `new`) sans FK en cascade |
 | A11 | `allergy_note` en texte libre | Risque qu'un nom d'enfant y soit saisi (donnée art. 9) | **`allergies jsonb`** : code allergène (14 allergènes UE + `sonstige`) → nombre. Les consignes réelles de la colonne Info (« 1× Nudeln/Müsli », « 18:00 Grillen ») vont dans une `note` courte (≤ 120 caractères) avec l'avertissement « keine Namen, keine Diagnosen » |
@@ -263,9 +263,9 @@ Objectif : une base complète, sécurisée et testée, rechargeable en une comma
   - `workedMinutes(shift)` : amplitude − pause ; TD = somme des 2 plages sans pause (Q2) ; SEM/Urlaub = 480 ; frei = 0 ; krank = constante (0 dans l'Excel, Q3) ; dimanche × `SUNDAY_FACTOR` (1,5) ;
   - `monthBalance(shifts, contract)` ;
   - `formatHHMM`, `formatHours` ;
-  - tests Vitest, dont un **mois fictif** saisi dans le modèle Excel actuel : sa ligne « IST o. Pause » sert de résultat attendu (fixture = critère d'acceptation).
+  - tests `node --test`, dont un **mois fictif** saisi dans le modèle Excel actuel : sa ligne « IST o. Pause » sert de résultat attendu (fixture = critère d'acceptation).
 
-**Livrable** : `supabase db reset` reconstruit tout ; tests pgTAP et Vitest verts ; migrations poussées sur le cloud.
+**Livrable** : `supabase db reset` reconstruit tout ; tests pgTAP et `node --test` verts ; migrations poussées sur le cloud.
 ### Phase 2 — Mobile en lecture · 12,5 h → Jalon 1
 
 Objectif : démo étape 1 sur un vrai téléphone.
@@ -470,7 +470,7 @@ Règles :
 
 | Couche | Outil | Comportement protégé |
 |---|---|---|
-| `packages/domain` | Vitest | Calcul IST/Soll, TD, SEM, dimanche ; critère d'acceptation « mois fictif » |
+| `packages/domain` | `node --test` | Calcul IST/Soll, TD, SEM, dimanche ; critère d'acceptation « mois fictif » |
 | Base de données | pgTAP (`supabase test db`) | Confidentialité des motifs, périmètres par rôle, raison obligatoire, audit immuable |
 | `notify` | `deno test` | Bons destinataires, aucune donnée sensible dans le texte |
 | Mobile / admin | Scénario de démo scripté, rejoué aux jalons | Parcours critiques de bout en bout |
@@ -525,7 +525,7 @@ Pas de tests UI automatisés en v0.1 : le budget ne le permet pas et la logique 
 - Variables : `EXPO_PUBLIC_SUPABASE_URL/KEY`, `NEXT_PUBLIC_SUPABASE_URL/KEY` ; secrets de fonction : `EXPO_ACCESS_TOKEN`, `WEBHOOK_SECRET`.
 
 **CI**
-- Job `check` : typecheck, lint, Vitest.
+- Job `check` : typecheck, lint, `node --test`.
 - Job `db` : `supabase start`, `db reset`, `test db`, puis régénération des types avec échec si le résultat diffère de `database.types.ts`. Déclenché seulement si `supabase/**` ou `packages/domain/**` change.
 - Builds EAS manuels ; Vercel déploie `main`.
 
