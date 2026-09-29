@@ -17,3 +17,13 @@ test("task action labels match tokens.md §4.1", () => {
   assert.equal(strings.tasks.reopen, "Wieder öffnen");
   assert.equal(strings.common.undo, "Rückgängig");
 });
+
+test("tab labels match docs/design/screens.md §6", () => {
+  assert.equal(strings.tabs.heute, "Heute");
+  assert.equal(strings.tabs.dienstplan, "Dienstplan");
+  assert.equal(strings.tabs.team, "Team");
+  assert.equal(strings.tabs.aufgaben, "Aufgaben");
+  assert.equal(strings.tabs.kueche, "Küche");
+  assert.equal(strings.tabs.profil, "Profil");
+  assert.equal(strings.tabs.comingSoon, "Bald verfügbar");
+});

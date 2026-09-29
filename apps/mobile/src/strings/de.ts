@@ -41,6 +41,15 @@ export const strings = {
     lp: "LP",
     gr: "GR",
   },
+  tabs: {
+    heute: "Heute",
+    dienstplan: "Dienstplan",
+    team: "Team",
+    aufgaben: "Aufgaben",
+    kueche: "Küche",
+    profil: "Profil",
+    comingSoon: "Bald verfügbar",
+  },
 } as const;
 
 export type Strings = typeof strings;
