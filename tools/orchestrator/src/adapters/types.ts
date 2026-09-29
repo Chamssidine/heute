@@ -30,6 +30,19 @@ export interface CliAdapter {
   summarize(line: string): string | undefined;
   // Whole stdout of a finished run → the final text answer.
   finalText(stdout: string): string | undefined;
+  // For CLIs that end the whole run at the first refused command (agy in print mode):
+  // how to find the refusals and continue the same conversation afterwards.
+  readonly resume?: {
+    refusedCommands(stdout: string): string[];
+    conversationId(stdout: string): string | undefined;
+    launch(
+      settings: CliSettings,
+      model: string,
+      role: Role,
+      conversationId: string,
+      message: string,
+    ): LaunchSpec;
+  };
 }
 
 export function parseJson(line: string): Record<string, unknown> | undefined {

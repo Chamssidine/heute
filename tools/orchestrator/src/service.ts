@@ -7,7 +7,7 @@ import { isManualRunDone, nextIssue, queueFor, STATUS_LABELS } from "./decisions
 import type { GitHub, PullRequest } from "./github.ts";
 import { fixPrompt, taskPrompt } from "./prompts.ts";
 import { reviewComment, reviewPullRequest } from "./review.ts";
-import { startRun, type RunHandle } from "./runner.ts";
+import { startResumableRun, type RunHandle } from "./runner.ts";
 import type { RunKind, RunRecord, Store } from "./store.ts";
 import {
   deleteLocalBranch,
@@ -268,14 +268,17 @@ export class Orchestrator {
       return;
     }
 
-    const handle = startRun(
+    const handle = startResumableRun({
       adapter,
-      adapter.launch(settings, agent.model, "agent", prompt),
-      agent.worktree,
-      run.logFile,
-      this.config.runTimeoutMinutes * 60_000,
-      (line) => this.store.pushLine(agentId, line),
-    );
+      settings,
+      model: agent.model,
+      role: "agent",
+      prompt,
+      cwd: agent.worktree,
+      logFile: run.logFile,
+      timeoutMs: this.config.runTimeoutMinutes * 60_000,
+      onLine: (line) => this.store.pushLine(agentId, line),
+    });
     this.running.set(agentId, { run, handle });
     this.store.data.runs.push(run);
     this.store.log(

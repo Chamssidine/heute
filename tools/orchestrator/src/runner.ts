@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import type { CliAdapter, LaunchSpec } from "./adapters/index.ts";
+import type { CliAdapter, CliSettings, LaunchSpec, Role } from "./adapters/index.ts";
 import { killTree } from "./exec.ts";
 
 export interface RunHandle {
@@ -58,4 +58,63 @@ export function startRun(
     });
   });
   return { done, stop: () => killTree(child.pid) };
+}
+
+export interface RunRequest {
+  adapter: CliAdapter;
+  settings: CliSettings;
+  model: string;
+  role: Role;
+  prompt: string;
+  cwd: string;
+  logFile: string;
+  timeoutMs: number;
+  onLine: (line: string) => void;
+}
+
+const MAX_RESUMES = 3;
+
+function resumeMessage(refused: string[]): string {
+  return `Ces commandes ont été refusées, car elles ne sont pas autorisées dans ce projet :
+${refused.map((c) => `- ${c}`).join("\n")}
+Ce n'est pas bloquant. Ne les relance pas et ne les contourne pas.
+Continue la tâche là où tu t'es arrêté, uniquement avec les commandes autorisées :
+git, npm run typecheck|lint|test|format, npm test, npm install, npm ci,
+npx prettier|eslint|tsc|expo, gh issue view|comment, gh pr create|view|diff|comment|list.`;
+}
+
+// Starts a run and, for CLIs that stop at the first refused command, continues the same
+// conversation (at most MAX_RESUMES times, within the same overall time budget).
+export function startResumableRun(req: RunRequest): RunHandle {
+  const deadline = Date.now() + req.timeoutMs;
+  const remaining = () => Math.max(60_000, deadline - Date.now());
+  const run = (spec: LaunchSpec) =>
+    startRun(req.adapter, spec, req.cwd, req.logFile, remaining(), req.onLine);
+
+  let current = run(req.adapter.launch(req.settings, req.model, req.role, req.prompt));
+  let stopped = false;
+  const done = (async () => {
+    let result = await current.done;
+    let stdout = result.stdout;
+    const resume = req.adapter.resume;
+    for (let attempt = 1; resume && attempt <= MAX_RESUMES && !stopped; attempt++) {
+      const refused = resume.refusedCommands(result.stdout);
+      const conversation = resume.conversationId(result.stdout) ?? resume.conversationId(stdout);
+      if (refused.length === 0 || !conversation || Date.now() >= deadline) break;
+      req.onLine(`Commande refusée (${refused.join(", ")}) : reprise ${attempt}/${MAX_RESUMES}`);
+      current = run(
+        resume.launch(req.settings, req.model, req.role, conversation, resumeMessage(refused)),
+      );
+      result = await current.done;
+      stdout += result.stdout;
+    }
+    return { code: result.code, stdout };
+  })();
+  return {
+    done,
+    stop: () => {
+      stopped = true;
+      current.stop();
+    },
+  };
 }

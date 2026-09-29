@@ -6,7 +6,7 @@ import type { Config } from "./config.ts";
 import { decideReview, type ReviewDecision } from "./decisions.ts";
 import { exec } from "./exec.ts";
 import { reviewPrompt } from "./prompts.ts";
-import { startRun } from "./runner.ts";
+import { startResumableRun } from "./runner.ts";
 import { prepareWorktree } from "./worktree.ts";
 
 export interface ReviewResult extends ReviewDecision {
@@ -103,19 +103,17 @@ export async function reviewPullRequest(req: ReviewRequest): Promise<ReviewResul
   }
 
   req.onLine(`Relecture par ${req.reviewerId} (${reviewer.model})…`);
-  const run = startRun(
+  const run = startResumableRun({
     adapter,
-    adapter.launch(
-      settings,
-      reviewer.model,
-      "reviewer",
-      reviewPrompt(req.pr.number, diffFile, issueFile),
-    ),
-    config.reviewWorktree,
-    join(req.logsDir, `review-pr${req.pr.number}-${Date.now()}.log`),
-    config.runTimeoutMinutes * 60_000,
-    req.onLine,
-  );
+    settings,
+    model: reviewer.model,
+    role: "reviewer",
+    prompt: reviewPrompt(req.pr.number, diffFile, issueFile),
+    cwd: config.reviewWorktree,
+    logFile: join(req.logsDir, `review-pr${req.pr.number}-${Date.now()}.log`),
+    timeoutMs: config.runTimeoutMinutes * 60_000,
+    onLine: req.onLine,
+  });
   const { code, stdout } = await run.done;
   const verdict = code === 0 ? parseVerdict(adapter.finalText(stdout)) : undefined;
   if (!verdict) {
