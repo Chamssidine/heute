@@ -42,6 +42,23 @@ export async function prepareWorktree(
   }
 }
 
+// True when an earlier, interrupted run already pushed work on this branch.
+export async function remoteBranchExists(dir: string, branch: string): Promise<boolean> {
+  const result = await exec("git", ["ls-remote", "--heads", "origin", branch], {
+    cwd: dir,
+    timeoutMs: 60_000,
+  });
+  if (result.code !== 0) throw new Error(`git ls-remote (${dir}) : ${result.stderr.trim()}`);
+  return result.stdout.trim() !== "";
+}
+
+// A local branch left by an interrupted run that pushed nothing: remove it so the agent
+// can create it again from main (otherwise `git switch -c` fails and the agent improvises).
+// Errors are ignored on purpose: most of the time the branch simply does not exist.
+export async function deleteLocalBranch(dir: string, branch: string): Promise<void> {
+  await exec("git", ["branch", "-D", branch], { cwd: dir, timeoutMs: 60_000 });
+}
+
 export async function ensureWorktree(repoDir: string, dir: string): Promise<void> {
   if (existsSync(dir)) return;
   await git(repoDir, ["worktree", "add", "--detach", dir, "origin/main"]);

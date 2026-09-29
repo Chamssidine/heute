@@ -7,19 +7,32 @@ Appelle \`gh\` par son nom, sans chemin complet. Si une commande est refusée, n
 contourner : note-la dans la PR (ou dans l'issue si tu ne peux pas ouvrir de PR).
 Pour explorer le code, utilise tes outils de fichiers (lister un dossier, chercher, lire un fichier),
 jamais une commande shell (ls, dir, Get-ChildItem, cat, Get-Content, findstr) : elles sont refusées
-et un refus peut arrêter ton travail.`;
+et un refus peut arrêter ton travail.
+Pour supprimer ou déplacer un fichier suivi : \`git rm\` ou \`git mv\`. N'utilise jamais \`git reset\`.`;
 
-export function taskPrompt(id: string, agent: AgentConfig, issue: number, branch: string): string {
+export function taskPrompt(
+  id: string,
+  agent: AgentConfig,
+  issue: number,
+  branch: string,
+  resume = false,
+): string {
+  const start = resume
+    ? `La branche ${branch} est déjà extraite : elle contient le travail poussé par un run précédent
+qui a été interrompu. Commence par \`git log --oneline origin/main..HEAD\` et
+\`git diff --stat origin/main\`, puis reprends là où il s'est arrêté, sans refaire ce qui est fait.`
+    : `origin/main est déjà extrait, arbre propre. Crée ta branche : \`git switch -c ${branch}\`.`;
   return `Tu es l'agent ${id} (${agent.name}) du projet Heute.
 ${AUTONOMY}
 
-Dossier de travail : ${agent.worktree} (origin/main est déjà extrait, arbre propre).
+Dossier de travail : ${agent.worktree}.
 Règles : AGENTS.md et ${agent.brief}. Lis-les d'abord.
 Tâche : issue #${issue}. Lis-la avec \`gh issue view ${issue}\`.
 
 Étapes :
-1. \`git switch -c ${branch}\`
-2. Réalise l'issue, uniquement dans tes chemins autorisés.
+1. ${start}
+2. Réalise l'issue, uniquement dans tes chemins autorisés. Après chaque étape qui compile,
+   commite et pousse (\`git push -u origin ${branch}\`) : si tu es interrompu, ton travail est repris.
 3. Lance les validations demandées par l'issue.
 4. \`git push -u origin ${branch}\`, puis \`gh pr create --base main --head ${branch}\`
    avec un titre « <ID>: … » et un corps qui commence par « Closes #${issue} »,
