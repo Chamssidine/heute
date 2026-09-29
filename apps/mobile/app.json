@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Heute",
+    "slug": "heute",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "platforms": ["android", "ios"],
+    "userInterfaceStyle": "light",
+    "scheme": "heute",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "de.heute.app"
+    },
+    "android": {
+      "package": "de.heute.app"
+    },
+    "plugins": ["expo-router"]
+  }
+}
