@@ -203,6 +203,12 @@ isOneToOne: false
                            },
 "is_valid_allergies":
 { Args: { "a": Json }; Returns: boolean
+                           },
+"meal_totals":
+{ Args: { "from_date": string,"to_date": string }; Returns: { "date": string,"meal": Database["public"]['Enums']["meal"],"total": number,"veg": number,"vegan": number,"mos": number,"allergies": number }[]
+                           },
+"team_shifts":
+{ Args: { "day": string }; Returns: { "employee_id": string,"display_name": string,"department": Database["public"]['Enums']["department"],"type": string,"start1": number,"end1": number,"start2": number,"end2": number }[]
                            }
           }
           Enums: {
