@@ -22,13 +22,7 @@ export const MaterialCommunityIcons: React.FC<MaterialCommunityIconsProps> = ({
   size,
   color,
 }) => {
-  return (
-    <TabIcon
-      name={name as MaterialCommunityIconName}
-      size={size}
-      color={typeof color === "string" ? color : undefined}
-    />
-  );
+  return <TabIcon name={name as MaterialCommunityIconName} size={size} color={color} />;
 };
 
 export default MaterialCommunityIcons;

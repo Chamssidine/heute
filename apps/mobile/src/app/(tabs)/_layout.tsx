@@ -2,7 +2,7 @@ import React from "react";
 import { Tabs } from "expo-router";
 import { theme } from "../../lib/theme";
 import { strings } from "../../strings";
-import { TabIcon } from "./tab-icons";
+import { MaterialCommunityIcons } from "./icons";
 
 export default function TabsLayout(): React.ReactElement {
   return (
@@ -38,7 +38,7 @@ export default function TabsLayout(): React.ReactElement {
           tabBarLabel: strings.tabs.heute,
           tabBarAccessibilityLabel: strings.tabs.heute,
           tabBarIcon: ({ color, size }) => (
-            <TabIcon name="calendar-today" color={color} size={size} />
+            <MaterialCommunityIcons name="calendar-today" color={color} size={size} />
           ),
         }}
       />
@@ -49,7 +49,7 @@ export default function TabsLayout(): React.ReactElement {
           tabBarLabel: strings.tabs.dienstplan,
           tabBarAccessibilityLabel: strings.tabs.dienstplan,
           tabBarIcon: ({ color, size }) => (
-            <TabIcon name="calendar-month" color={color} size={size} />
+            <MaterialCommunityIcons name="calendar-month" color={color} size={size} />
           ),
         }}
       />
@@ -60,7 +60,7 @@ export default function TabsLayout(): React.ReactElement {
           tabBarLabel: strings.tabs.team,
           tabBarAccessibilityLabel: strings.tabs.team,
           tabBarIcon: ({ color, size }) => (
-            <TabIcon name="account-group" color={color} size={size} />
+            <MaterialCommunityIcons name="account-group" color={color} size={size} />
           ),
         }}
       />
@@ -71,7 +71,7 @@ export default function TabsLayout(): React.ReactElement {
           tabBarLabel: strings.tabs.aufgaben,
           tabBarAccessibilityLabel: strings.tabs.aufgaben,
           tabBarIcon: ({ color, size }) => (
-            <TabIcon name="broom" color={color} size={size} />
+            <MaterialCommunityIcons name="broom" color={color} size={size} />
           ),
         }}
       />
@@ -82,7 +82,7 @@ export default function TabsLayout(): React.ReactElement {
           tabBarLabel: strings.tabs.kueche,
           tabBarAccessibilityLabel: strings.tabs.kueche,
           tabBarIcon: ({ color, size }) => (
-            <TabIcon name="silverware-fork-knife" color={color} size={size} />
+            <MaterialCommunityIcons name="silverware-fork-knife" color={color} size={size} />
           ),
         }}
       />
@@ -93,7 +93,7 @@ export default function TabsLayout(): React.ReactElement {
           tabBarLabel: strings.tabs.profil,
           tabBarAccessibilityLabel: strings.tabs.profil,
           tabBarIcon: ({ color, size }) => (
-            <TabIcon name="account-circle" color={color} size={size} />
+            <MaterialCommunityIcons name="account-circle" color={color} size={size} />
           ),
         }}
       />
