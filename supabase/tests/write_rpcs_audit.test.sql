@@ -98,12 +98,26 @@ select throws_ok(
 set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a4';
 
 select lives_ok(
-  $$select public.delete_shift((select id from public.shifts where employee_id = '00000000-0000-0000-0000-0000000000b3' and date = '2030-02-06'), 'Krankmeldung ersetzt')$$,
+  $$select public.delete_shift((select id from public.shifts where employee_id = '00000000-0000-0000-0000-0000000000b3' and date = '2030-02-06'), 'Dienst getauscht')$$,
   'la Küchenleitung supprime un service Küche'
 );
 
--- La Küchenleitung voit le service Housekeeping ? Non : hors périmètre de lecture aussi.
--- On le supprime donc en admin pour vérifier l'audit, et on teste le refus via un id connu.
+-- La Küchenleitung ne lit pas le service Housekeeping (RLS) : l'id est mémorisé
+-- en admin, puis le refus est testé avec cet id.
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+
+select set_config('test.hk_shift_id',
+  (select id::text from public.shifts where employee_id = '00000000-0000-0000-0000-0000000000b5' and date = '2030-02-05'),
+  true);
+
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a4';
+
+select throws_ok(
+  $$select public.delete_shift(current_setting('test.hk_shift_id')::uuid, 'Test')$$,
+  'HT002', 'forbidden',
+  'la Küchenleitung ne peut pas supprimer un service Housekeeping'
+);
+
 set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
 
 select lives_ok(
