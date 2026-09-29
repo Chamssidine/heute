@@ -1,0 +1,98 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  decideReview,
+  nextIssue,
+  parseDependencies,
+  queueFor,
+  type IssueSummary,
+  type ReviewInput,
+} from "./decisions.ts";
+import { matchesAny } from "./paths.ts";
+
+const issue = (
+  number: number,
+  labels: string[],
+  body = "",
+  state: "OPEN" | "CLOSED" = "OPEN",
+): IssueSummary => ({ number, title: `#${number}`, labels, body, state });
+
+test("globs match the agent perimeters", () => {
+  const ui = ["apps/mobile/src/features/*/components/**"];
+  assert.ok(matchesAny("apps/mobile/src/features/kitchen/components/Row.tsx", ui));
+  assert.ok(!matchesAny("apps/mobile/src/features/kitchen/model.ts", ui));
+  const domain = ["packages/domain/src/{time,format}/**"];
+  assert.ok(matchesAny("packages/domain/src/time/worked.ts", domain));
+  assert.ok(!matchesAny("packages/domain/src/errors/codes.ts", domain));
+  assert.ok(matchesAny("apps/admin/package.json", ["**/package.json"]));
+  assert.ok(matchesAny("package.json", ["**/package.json"]));
+});
+
+test("dependencies are read from « Dépend de »", () => {
+  assert.deepEqual(parseDependencies("x\nDépend de #14, #15\ny"), [14, 15]);
+  assert.deepEqual(parseDependencies("aucune"), []);
+});
+
+test("next issue: lowest ready issue of the agent, skipping blocked and busy ones", () => {
+  const issues = [
+    issue(15, ["agent:A"], "Dépend de #14"),
+    issue(14, ["agent:A", "en-cours"]),
+    issue(16, ["agent:A"]),
+    issue(13, ["agent:L"]),
+    issue(12, ["agent:A"], "", "CLOSED"),
+  ];
+  assert.equal(nextIssue("agent:A", issues)?.number, 16);
+  assert.deepEqual(
+    queueFor("agent:A", issues).map((e) => [e.issue.number, e.ready]),
+    [
+      [15, false],
+      [16, true],
+    ],
+  );
+});
+
+test("a dependency on a closed issue does not block", () => {
+  const issues = [issue(15, ["agent:A"], "Dépend de #14"), issue(14, ["agent:A"], "", "CLOSED")];
+  assert.equal(nextIssue("agent:A", issues)?.number, 15);
+});
+
+test("tasks reserved to the human are never assigned", () => {
+  assert.equal(nextIssue("agent:L", [issue(20, ["agent:L", "humain"])]), undefined);
+});
+
+const base: ReviewInput = {
+  files: ["apps/mobile/src/app/index.tsx"],
+  allowedPaths: ["apps/mobile/src/app/**"],
+  contractPaths: ["packages/domain/**"],
+  validationsPassed: true,
+  reviewerApproved: true,
+  fixRoundsDone: 0,
+  maxFixRounds: 2,
+};
+
+test("review: clean PR is ready for the human to merge", () => {
+  assert.equal(decideReview(base).outcome, "ready");
+});
+
+test("review: files outside the perimeter ask for changes", () => {
+  const d = decideReview({ ...base, files: [...base.files, "AGENTS.md"] });
+  assert.equal(d.outcome, "changes");
+  assert.match(d.reasons[0] ?? "", /AGENTS\.md/);
+});
+
+test("review: contract changes wait for the human", () => {
+  const d = decideReview({
+    ...base,
+    files: ["packages/domain/src/time/a.ts"],
+    allowedPaths: ["packages/domain/**"],
+  });
+  assert.equal(d.outcome, "human");
+});
+
+test("review: failed validations after the last fix round go to the human", () => {
+  assert.equal(decideReview({ ...base, validationsPassed: false }).outcome, "changes");
+  assert.equal(
+    decideReview({ ...base, validationsPassed: false, fixRoundsDone: 2 }).outcome,
+    "human",
+  );
+});
