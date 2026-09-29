@@ -61,6 +61,12 @@ test("tasks reserved to the human are never assigned", () => {
   assert.equal(nextIssue("agent:L", [issue(20, ["agent:L", "humain"])]), undefined);
 });
 
+test("an issue that already has an open PR is not offered again", () => {
+  const issues = [issue(13, ["agent:L"]), issue(26, ["agent:L"])];
+  assert.equal(nextIssue("agent:L", issues, new Set([13]))?.number, 26);
+  assert.equal(nextIssue("agent:L", [issue(13, ["agent:L"])], new Set([13])), undefined);
+});
+
 const base: ReviewInput = {
   files: ["apps/mobile/src/app/index.tsx"],
   allowedPaths: ["apps/mobile/src/app/**"],
