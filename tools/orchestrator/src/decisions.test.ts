@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   decideReview,
+  isManualRunDone,
   nextIssue,
   parseDependencies,
   queueFor,
@@ -95,4 +96,16 @@ test("review: failed validations after the last fix round go to the human", () =
     decideReview({ ...base, validationsPassed: false, fixRoundsDone: 2 }).outcome,
     "human",
   );
+});
+
+test("manual task run ends when its PR appears", () => {
+  const run = { kind: "task" as const, branch: "l/i13" };
+  assert.equal(isManualRunDone(run, []), false);
+  assert.equal(isManualRunDone(run, [{ headRefName: "l/i13", headRefOid: "abc" }]), true);
+});
+
+test("manual fix run ends only after a new commit on the PR", () => {
+  const run = { kind: "fix" as const, branch: "u/i20", startSha: "abc" };
+  assert.equal(isManualRunDone(run, [{ headRefName: "u/i20", headRefOid: "abc" }]), false);
+  assert.equal(isManualRunDone(run, [{ headRefName: "u/i20", headRefOid: "def" }]), true);
 });

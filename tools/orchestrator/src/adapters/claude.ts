@@ -34,6 +34,7 @@ const REVIEWER_TOOLS = [
 export const claude: CliAdapter = {
   id: "claude",
   verified: true,
+  mode: "process",
   launch(settings, model, role, prompt) {
     const args =
       role === "agent"

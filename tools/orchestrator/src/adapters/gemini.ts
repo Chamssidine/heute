@@ -7,6 +7,7 @@ import { brief, parseJson, withExtra, type CliAdapter } from "./types.ts";
 export const gemini: CliAdapter = {
   id: "gemini",
   verified: false,
+  mode: "process",
   launch(settings, model, role, prompt) {
     const args = [settings.command, "-p", " ", "-m", model, "--output-format", "stream-json"];
     if (role === "reviewer") args.push("--approval-mode", "plan");

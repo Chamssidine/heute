@@ -6,6 +6,7 @@ export interface PullRequest {
   title: string;
   url: string;
   headRefName: string;
+  headRefOid: string;
   labels: string[];
 }
 
@@ -57,7 +58,7 @@ export class GitHub {
       "--limit",
       "100",
       "--json",
-      "number,title,url,headRefName,labels",
+      "number,title,url,headRefName,headRefOid,labels",
     ]);
     const raw = JSON.parse(out) as (Omit<PullRequest, "labels"> & RawLabelled)[];
     return raw.map((p) => ({ ...p, labels: p.labels.map((l) => l.name) }));

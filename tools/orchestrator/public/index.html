@@ -234,6 +234,22 @@
         display: none;
         max-width: 90vw;
       }
+      .manual {
+        display: grid;
+        gap: 8px;
+        padding: 12px;
+        border-radius: 8px;
+        background: var(--warn-bg);
+        border: 1px solid var(--warn);
+      }
+      .manual ol {
+        margin: 0;
+        padding-left: 20px;
+      }
+      code {
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 13px;
+      }
       details summary {
         cursor: pointer;
         color: var(--muted);
@@ -351,6 +367,65 @@
                 ? h("span", { class: "chip" }, o)
                 : h("span", { class: "chip" }, "pas encore relue");
 
+      // Manual (IDE) agent: the human pastes the prompt; the end is detected from GitHub.
+      function manualBox(a, run) {
+        const copy = async () => {
+          try {
+            await navigator.clipboard.writeText(run.prompt);
+            toast("Prompt copié : colle-le dans une nouvelle conversation d'agent.");
+          } catch {
+            toast("Copie impossible : sélectionne le prompt dans « Voir le prompt ».");
+          }
+        };
+        return h(
+          "div",
+          { class: "manual" },
+          h("strong", {}, `À faire dans ${a.tool}`),
+          h(
+            "ol",
+            {},
+            h("li", {}, "Ouvre le dossier ", h("code", {}, run.worktree), ` dans ${a.tool}.`),
+            h("li", {}, "Nouvelle conversation d'agent, colle le prompt, lance-la."),
+            h(
+              "li",
+              {},
+              run.kind === "fix"
+                ? "L'outil détecte le nouveau commit sur la PR et relance la relecture."
+                : `L'outil détecte la PR sur ${run.branch} et lance la relecture.`,
+            ),
+          ),
+          h(
+            "div",
+            { class: "row" },
+            h("button", { class: "primary", onclick: copy }, "Copier le prompt"),
+            h(
+              "button",
+              {
+                onclick: () =>
+                  confirm("L'agent a fini ? Sans PR, la tâche sera marquée « bloquée ».") &&
+                  act("done", { agent: a.id }),
+              },
+              "Terminé",
+            ),
+            h(
+              "button",
+              {
+                class: "danger",
+                onclick: () =>
+                  confirm(`Annuler la tâche de l'agent ${a.id} ?`) && act("stop", { agent: a.id }),
+              },
+              "Annuler",
+            ),
+          ),
+          h(
+            "details",
+            { "data-key": `${a.id}-prompt` },
+            h("summary", {}, "Voir le prompt"),
+            h("pre", { class: "log" }, run.prompt),
+          ),
+        );
+      }
+
       function renderAgents() {
         $("agents").replaceChildren(
           ...state.agents.map((a) => {
@@ -395,29 +470,31 @@
                       ? [issueLink(ready.number), ` ${ready.title}`]
                       : h("span", { class: "empty" }, "aucune prête"),
                   ),
-              h(
-                "div",
-                { class: "row" },
-                h(
-                  "button",
-                  {
-                    class: "primary",
-                    disabled: Boolean(running) || !ready,
-                    onclick: () => act("launch", { agent: a.id }),
-                  },
-                  "Lancer la prochaine tâche",
-                ),
-                h(
-                  "button",
-                  {
-                    class: "danger",
-                    disabled: !running,
-                    onclick: () =>
-                      confirm(`Arrêter l'agent ${a.id} ?`) && act("stop", { agent: a.id }),
-                  },
-                  "Arrêter",
-                ),
-              ),
+              running?.manual
+                ? manualBox(a, running)
+                : h(
+                    "div",
+                    { class: "row" },
+                    h(
+                      "button",
+                      {
+                        class: "primary",
+                        disabled: Boolean(running) || !ready,
+                        onclick: () => act("launch", { agent: a.id }),
+                      },
+                      a.manual ? `Préparer la tâche pour ${a.tool}` : "Lancer la prochaine tâche",
+                    ),
+                    h(
+                      "button",
+                      {
+                        class: "danger",
+                        disabled: !running,
+                        onclick: () =>
+                          confirm(`Arrêter l'agent ${a.id} ?`) && act("stop", { agent: a.id }),
+                      },
+                      "Arrêter",
+                    ),
+                  ),
               h(
                 "pre",
                 { class: "log", "aria-label": `Log de l'agent ${a.id}` },

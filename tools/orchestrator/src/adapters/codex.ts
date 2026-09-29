@@ -5,6 +5,7 @@ import { parseJson, withExtra, type CliAdapter } from "./types.ts";
 export const codex: CliAdapter = {
   id: "codex",
   verified: false,
+  mode: "process",
   launch(settings, model, role, prompt) {
     const sandbox = role === "reviewer" ? "read-only" : "workspace-write";
     const args = ["exec", "--json", "-m", model, "--sandbox", sandbox, "-"];

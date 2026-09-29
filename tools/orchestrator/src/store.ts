@@ -20,6 +20,12 @@ export interface RunRecord {
   exitCode?: number;
   result?: string;
   logFile: string;
+  // Manual runs (IDE agents): the prompt to paste, the folder to open, and for a
+  // correction the PR head commit at start, to notice when the agent has pushed.
+  manual?: boolean;
+  prompt?: string;
+  worktree?: string;
+  startSha?: string;
 }
 
 export interface ReviewRecord {

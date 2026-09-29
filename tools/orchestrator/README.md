@@ -29,6 +29,22 @@ Puis ouvrir http://127.0.0.1:4000. Le serveur n'écoute que sur la machine local
    - ou **Renvoyer à l'agent**, avec une note si besoin ;
    - ou **Relire** avec un autre relecteur (Claude ou Codex).
 
+## Agents dans un IDE (Antigravity)
+
+Certains agents ne tournent que dans un IDE, comme Gemini dans Antigravity. Ils utilisent l'adaptateur `manual` : l'outil ne lance rien lui-même.
+
+1. **Préparer la tâche** : l'outil choisit l'issue, remet le worktree de l'agent sur `origin/main` et affiche le prompt.
+2. Ouvre ce worktree dans l'IDE (par exemple `C:\dev\heute-l` pour L), puis **Copier le prompt** et colle-le dans une nouvelle conversation d'agent.
+3. L'outil détecte la fin tout seul, à chaque actualisation (toutes les 60 s) :
+   - **tâche** : la PR apparaît sur la branche `<préfixe>/i<numéro>` ;
+   - **correction** : un nouveau commit arrive sur la PR.
+
+   Il lance alors la relecture automatique.
+
+4. **Terminé** : à utiliser si l'agent s'est arrêté sans PR (la tâche passe en `bloquée`). **Annuler** libère la tâche.
+
+Les tâches en attente survivent à un redémarrage de l'orchestrateur.
+
 ## Ajouter ou changer un LLM
 
 - **Changer le modèle ou la CLI d'un agent** : modifier `agents.<id>.cli` et `model` dans `config.json`.
@@ -40,21 +56,17 @@ Puis ouvrir http://127.0.0.1:4000. Le serveur n'écoute que sur la machine local
 - **Ajouter un relecteur** : entrée dans `reviewers`.
 - **Permissions propres à une CLI** : `clis.<nom>.extraArgs.agent` / `.reviewer`, sans toucher au code.
 
-| Adaptateur | État                                                                                  |
-| ---------- | ------------------------------------------------------------------------------------- |
-| `claude`   | Vérifié. Agents limités par `--allowedTools` : pas de `gh pr merge`, pas de `gh api`. |
-| `gemini`   | Non vérifié en réel. Voir la sécurité ci-dessous.                                     |
-| `codex`    | Écrit d'après la documentation de `codex exec`, CLI non installée ici : à tester.     |
+| Adaptateur | État                                                                                                               |
+| ---------- | ------------------------------------------------------------------------------------------------------------------ |
+| `claude`   | Vérifié. Agents limités par `--allowedTools` : pas de `gh pr merge`, pas de `gh api`.                              |
+| `manual`   | Pour les agents d'IDE (Antigravity) : prompt à coller, fin détectée sur GitHub.                                    |
+| `gemini`   | Non utilisable ici : Google refuse Gemini CLI avec un compte gratuit individuel. Il faut une clé `GEMINI_API_KEY`. |
+| `codex`    | Écrit d'après la documentation de `codex exec`, CLI non installée ici : à tester.                                  |
 
 ## Sécurité
 
-- **Gemini :** en mode non interactif, Gemini CLI ne sait pas demander de confirmation. `config.json` passe donc `--approval-mode yolo` : pendant un run, l'agent peut exécuter n'importe quelle commande dans son worktree. Garde-fous en place :
-  - lancement manuel ;
-  - bouton **Arrêter** et durée maximale (`runTimeoutMinutes`) ;
-  - protection de `main` : seule une PR y entre ;
-  - contrôle du périmètre à la relecture.
-
-  Pour limiter davantage, remplacer ce mode par une politique du Policy Engine de Gemini CLI.
+- **Gemini CLI**, si tu l'utilises un jour avec une clé API : en mode non interactif, il ne peut pas demander de confirmation, et il refuse de travailler dans un dossier non approuvé. Préfère une politique du Policy Engine plutôt que `--approval-mode yolo`, en l'ajoutant via `clis.gemini.extraArgs.agent`.
+- **Agents d'IDE :** leurs permissions sont celles que tu règles dans l'IDE. L'outil n'y a aucun accès.
 
 - **Aucun secret** n'est transmis aux agents par l'outil. Ils utilisent toutefois le `gh` connecté de la machine.
 - **API locale :** les actions exigent l'en-tête `x-orchestrator: 1` et une origine locale. Une page web externe ne peut donc pas déclencher d'action.

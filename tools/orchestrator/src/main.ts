@@ -13,7 +13,8 @@ const orchestrator = new Orchestrator(config, github, store, repoDir);
 
 await github.ensureStatusLabels();
 await orchestrator.refresh();
-startServer(config.port, orchestrator, store);
+// ORCHESTRATOR_PORT lets a second instance run next to the usual one (e.g. to test a change).
+startServer(Number(process.env["ORCHESTRATOR_PORT"] ?? config.port), orchestrator, store);
 
 // Refreshing only reads GitHub: nothing is launched or merged without a click.
 setInterval(() => {
