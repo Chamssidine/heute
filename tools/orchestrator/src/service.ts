@@ -73,6 +73,7 @@ export class Orchestrator {
         .map((l) => `- ${l}`)
         .join("\n") || "- Relire la PR et corriger les défauts signalés en commentaire.";
     const issue = this.issueOfBranch(pr.headRefName);
+    await ensureWorktree(this.repoDir, agent.worktree);
     await prepareWorktree(agent.worktree, { branch: pr.headRefName });
     await this.github.setLabels(prNumber, [STATUS_LABELS.running], this.labelsOn(pr));
     this.start(
@@ -95,6 +96,7 @@ export class Orchestrator {
     this.reviewing = prNumber;
     this.store.setActivity(`Relecture de la PR #${prNumber}`);
     try {
+      await ensureWorktree(this.repoDir, this.config.reviewWorktree);
       await this.github.setLabels(prNumber, [STATUS_LABELS.review], this.labelsOn(pr));
       const result = await reviewPullRequest({
         config: this.config,
