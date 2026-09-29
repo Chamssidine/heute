@@ -6,6 +6,7 @@ import {
   nextIssue,
   parseDependencies,
   queueFor,
+  quotaResetDelayMs,
   type IssueSummary,
   type ReviewInput,
 } from "./decisions.ts";
@@ -114,4 +115,15 @@ test("manual fix run ends only after a new commit on the PR", () => {
   const run = { kind: "fix" as const, branch: "u/i20", startSha: "abc" };
   assert.equal(isManualRunDone(run, [{ headRefName: "u/i20", headRefOid: "abc" }]), false);
   assert.equal(isManualRunDone(run, [{ headRefName: "u/i20", headRefOid: "def" }]), true);
+});
+
+test("quota: reads the reset delay given by the provider (real agy message)", () => {
+  const tail =
+    'AGY_ERROR: {"short_error":"RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h18m58s."}';
+  assert.equal(quotaResetDelayMs(tail), (2 * 3600 + 18 * 60 + 58) * 1000);
+});
+
+test("quota: without a reset time, waits one hour; a normal run is not a quota stop", () => {
+  assert.equal(quotaResetDelayMs("Error: usage limit reached"), 60 * 60_000);
+  assert.equal(quotaResetDelayMs('{"event":"result","result":{"status":"SUCCESS"}}'), undefined);
 });

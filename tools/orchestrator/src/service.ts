@@ -1,9 +1,16 @@
 // Every action that launches an agent or merges code is triggered by the human from the
 // dashboard. The service only prepares, runs what was asked, and reviews read-only.
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { adapterFor } from "./adapters/index.ts";
 import { agentOfBranch, type Config } from "./config.ts";
-import { isManualRunDone, nextIssue, queueFor, STATUS_LABELS } from "./decisions.ts";
+import {
+  isManualRunDone,
+  nextIssue,
+  queueFor,
+  quotaResetDelayMs,
+  STATUS_LABELS,
+} from "./decisions.ts";
 import type { GitHub, PullRequest } from "./github.ts";
 import { fixPrompt, taskPrompt } from "./prompts.ts";
 import { reviewComment, reviewPullRequest } from "./review.ts";
@@ -17,6 +24,27 @@ import {
 } from "./worktree.ts";
 
 const ALL_STATUS = Object.values(STATUS_LABELS);
+
+// End of a run's log: provider errors (quota, rate limit) are printed last.
+function logTail(file: string): string {
+  try {
+    return readFileSync(file, "utf8").slice(-6000);
+  } catch {
+    return "";
+  }
+}
+
+function activeQuota(until: string | undefined): string | undefined {
+  return until && Date.parse(until) > Date.now() ? until : undefined;
+}
+
+function clock(iso: string): string {
+  return new Date(iso).toLocaleTimeString("de-DE", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Berlin",
+  });
+}
 const TOOL_NAMES: Record<string, string> = {
   claude: "Claude Code",
   antigravity: "Antigravity CLI",
@@ -32,6 +60,7 @@ export class Orchestrator {
   // `handle` is absent for manual runs: nothing runs on this machine.
   private readonly running = new Map<string, { run: RunRecord; handle?: RunHandle }>();
   private reviewing: number | undefined;
+  private readonly reviewQueue: { pr: number; reviewer: string }[] = [];
   private readonly interrupted: RunRecord[] = [];
 
   constructor(config: Config, github: GitHub, store: Store, repoDir: string) {
@@ -79,6 +108,7 @@ export class Orchestrator {
   async launch(agentId: string): Promise<void> {
     const agent = this.requireAgent(agentId);
     if (this.running.has(agentId)) throw new Error(`L'agent ${agentId} travaille déjà`);
+    this.assertQuotaAvailable(agentId);
     await this.refresh();
     const issue = nextIssue(agent.label, this.store.live.issues, this.issuesWithOpenPr());
     if (!issue) throw new Error(`Aucune tâche prête pour l'agent ${agentId}`);
@@ -108,6 +138,7 @@ export class Orchestrator {
     const agentId = this.requireAgentOf(pr);
     const agent = this.requireAgent(agentId);
     if (this.running.has(agentId)) throw new Error(`L'agent ${agentId} travaille déjà`);
+    this.assertQuotaAvailable(agentId);
     const review = this.store.data.reviews[String(prNumber)];
     const feedback =
       [
@@ -148,8 +179,6 @@ export class Orchestrator {
   // Called from the dashboard: errors that can be known up front go back to the click,
   // the review itself then runs in the background.
   startReview(prNumber: number, reviewerId: string): void {
-    if (this.reviewing !== undefined)
-      throw new Error(`Relecture de la PR #${this.reviewing} en cours`);
     this.requirePr(prNumber);
     if (!this.config.reviewers[reviewerId]) throw new Error(`Relecteur inconnu : ${reviewerId}`);
     this.review(prNumber, reviewerId).catch((error: Error) =>
@@ -157,9 +186,17 @@ export class Orchestrator {
     );
   }
 
+  // One review at a time (they share the review worktree): the others wait their turn.
+  // Dropping them made a fixed PR keep its old « à corriger » verdict.
   async review(prNumber: number, reviewerId: string): Promise<void> {
-    if (this.reviewing !== undefined)
-      throw new Error(`Relecture de la PR #${this.reviewing} en cours`);
+    if (this.reviewing !== undefined) {
+      const queued = this.reviewQueue.some((q) => q.pr === prNumber);
+      if (this.reviewing !== prNumber && !queued) {
+        this.reviewQueue.push({ pr: prNumber, reviewer: reviewerId });
+        this.store.log("info", `Relecture de la PR #${prNumber} mise en file`);
+      }
+      return;
+    }
     const pr = this.requirePr(prNumber);
     // PRs opened outside an agent branch (orchestrator, human) are reviewed without a perimeter.
     const agentId = agentOfBranch(this.config, pr.headRefName);
@@ -207,7 +244,20 @@ export class Orchestrator {
       this.reviewing = undefined;
       this.store.setActivity(undefined);
       await this.refresh().catch(() => undefined);
+      this.startNextQueuedReview();
     }
+  }
+
+  private startNextQueuedReview(): void {
+    const next = this.reviewQueue.shift();
+    if (!next) return;
+    if (!this.store.live.prs.some((p) => p.number === next.pr)) {
+      this.startNextQueuedReview(); // merged or closed meanwhile
+      return;
+    }
+    this.review(next.pr, next.reviewer).catch((error: Error) =>
+      this.store.log("error", `Relecture PR #${next.pr} : ${error.message}`),
+    );
   }
 
   async merge(prNumber: number): Promise<void> {
@@ -308,6 +358,11 @@ export class Orchestrator {
     run.endedAt = new Date().toISOString();
     run.exitCode = code;
     try {
+      const quotaDelay = quotaResetDelayMs(logTail(run.logFile));
+      if (quotaDelay !== undefined) {
+        await this.pauseForQuota(run, quotaDelay);
+        return;
+      }
       const pr = await this.github.findPullRequest(run.branch);
       if (run.kind === "task") await this.github.setLabels(run.issue, [], [STATUS_LABELS.running]);
       if (!pr) {
@@ -333,6 +388,30 @@ export class Orchestrator {
       this.store.log("error", `Fin de l'agent ${run.agent} : ${(error as Error).message}`);
     } finally {
       this.store.save();
+    }
+  }
+
+  // A run stopped by the LLM provider's quota is not a failed task: release it (no « bloquée »,
+  // a correction goes back to « à corriger ») and refuse new runs for this agent until the reset.
+  private async pauseForQuota(run: RunRecord, delayMs: number): Promise<void> {
+    const until = new Date(Date.now() + delayMs).toISOString();
+    (this.store.data.quotaUntil ??= {})[run.agent] = until;
+    run.result = "quota épuisé";
+    if (run.kind === "task") {
+      await this.github.setLabels(run.issue, [], [STATUS_LABELS.running]);
+    } else if (run.pr !== undefined) {
+      await this.github.setLabels(run.pr, [STATUS_LABELS.changes], [STATUS_LABELS.running]);
+    }
+    this.store.log(
+      "warn",
+      `Quota épuisé pour l'agent ${run.agent} : #${run.pr ?? run.issue} libérée, relance possible vers ${clock(until)}`,
+    );
+  }
+
+  private assertQuotaAvailable(agentId: string): void {
+    const until = this.store.data.quotaUntil?.[agentId];
+    if (until && Date.parse(until) > Date.now()) {
+      throw new Error(`Quota de l'agent ${agentId} épuisé : relance possible vers ${clock(until)}`);
     }
   }
 
@@ -394,6 +473,7 @@ export class Orchestrator {
         manual: adapter.mode === "manual",
         model: a.model,
         verified: adapter.verified,
+        quotaUntil: activeQuota(this.store.data.quotaUntil?.[id]),
         run: current?.run,
         lines: live.liveLines[id] ?? [],
         queue: queueFor(a.label, live.issues, this.issuesWithOpenPr()).map((q) => ({

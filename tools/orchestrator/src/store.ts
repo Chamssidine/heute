@@ -48,6 +48,8 @@ export interface PersistedState {
   runs: RunRecord[];
   reviews: Record<string, ReviewRecord>;
   events: EventRecord[];
+  // Per agent: when the LLM provider's quota resets (ISO date). Kept across restarts.
+  quotaUntil?: Record<AgentId, string>;
 }
 
 // Volatile data (GitHub snapshot, live log lines) is kept in memory only.

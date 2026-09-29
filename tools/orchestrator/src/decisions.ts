@@ -125,3 +125,16 @@ export function isManualRunDone(
   if (!pr) return false;
   return run.kind === "task" || pr.headRefOid !== run.startSha;
 }
+
+const QUOTA_ERROR = /RESOURCE_EXHAUSTED|quota (?:reached|exceeded)|usage limit reached/i;
+const DEFAULT_QUOTA_WAIT_MS = 60 * 60_000;
+
+// End of a run's log → how long until the provider's quota resets, or undefined when the
+// run did not stop on a quota. Reads « Resets in 2h18m58s » when the provider gives it.
+export function quotaResetDelayMs(logTail: string): number | undefined {
+  if (!QUOTA_ERROR.test(logTail)) return undefined;
+  const reset = logTail.match(/Resets? in\s*(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?/i);
+  const [hours, minutes, seconds] = [reset?.[1], reset?.[2], reset?.[3]].map((v) => Number(v ?? 0));
+  const delay = ((hours ?? 0) * 3600 + (minutes ?? 0) * 60 + (seconds ?? 0)) * 1000;
+  return delay > 0 ? delay : DEFAULT_QUOTA_WAIT_MS;
+}
