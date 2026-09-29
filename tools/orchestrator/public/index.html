@@ -1052,6 +1052,8 @@
               sub: `${who} · à corriger : ${r.reasons[0] ?? ""}`,
               actions: [
                 diff,
+                // After a fix pushed outside the tool, the old verdict is stale: re-review.
+                h("button", { onclick: () => chooseReviewer(pr) }, "Relire"),
                 pr.agent
                   ? h(
                       "button",
@@ -1115,7 +1117,8 @@
             });
           } else if (!a.run) {
             const next = a.queue.find((q) => q.ready);
-            if (next) {
+            // No « Lancer » while the provider's quota is exhausted: the run would stop at once.
+            if (next && !a.quotaUntil) {
               items.push({
                 kind: "launch",
                 tone: "accent",
@@ -1276,6 +1279,13 @@
           };
         const reviewed = state.prs.find((p) => p.agent === a.id && p.number === state.reviewing);
         if (reviewed) return { label: "en relecture", tone: "accent", live: true };
+        if (a.quotaUntil) {
+          const at = new Date(a.quotaUntil).toLocaleTimeString("fr-FR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          return { label: `quota épuisé · reprise ${at}`, tone: "bad" };
+        }
         return { label: "libre", tone: "ok" };
       }
 
