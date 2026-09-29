@@ -12,6 +12,12 @@ import type { RunKind, RunRecord, Store } from "./store.ts";
 import { ensureWorktree, prepareWorktree } from "./worktree.ts";
 
 const ALL_STATUS = Object.values(STATUS_LABELS);
+const TOOL_NAMES: Record<string, string> = {
+  claude: "Claude Code",
+  antigravity: "Antigravity CLI",
+  gemini: "Gemini CLI",
+  codex: "Codex",
+};
 
 export class Orchestrator {
   private readonly config: Config;
@@ -348,7 +354,8 @@ export class Orchestrator {
         id,
         name: a.name,
         cli: a.cli,
-        tool: settings?.command,
+        // Manual adapters store the IDE name in `command`; process adapters store a path.
+        tool: adapter.mode === "manual" ? settings?.command : (TOOL_NAMES[adapter.id] ?? a.cli),
         manual: adapter.mode === "manual",
         model: a.model,
         verified: adapter.verified,
@@ -362,10 +369,19 @@ export class Orchestrator {
         })),
       };
     });
+    const agentLabels = new Map(Object.entries(this.config.agents).map(([id, a]) => [a.label, id]));
     return {
       repo: this.config.repo,
       lastRefresh: live.lastTick,
       activity: live.activity,
+      reviewing: this.reviewing,
+      // Agent issues only, without their body: enough for the progress board.
+      issues: live.issues.flatMap((i) => {
+        const agent = i.labels.map((l) => agentLabels.get(l)).find(Boolean);
+        return agent
+          ? [{ number: i.number, title: i.title, state: i.state, labels: i.labels, agent }]
+          : [];
+      }),
       reviewers: Object.entries(this.config.reviewers).map(([id, r]) => ({
         id,
         model: r.model,
@@ -377,6 +393,7 @@ export class Orchestrator {
       prs: live.prs.map((p) => ({
         ...p,
         agent: agentOfBranch(this.config, p.headRefName),
+        issue: this.issueOfBranch(p.headRefName),
         review: data.reviews[String(p.number)],
       })),
       attention: live.issues
