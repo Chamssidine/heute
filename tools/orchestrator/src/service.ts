@@ -32,6 +32,7 @@ export class Orchestrator {
   // `handle` is absent for manual runs: nothing runs on this machine.
   private readonly running = new Map<string, { run: RunRecord; handle?: RunHandle }>();
   private reviewing: number | undefined;
+  private readonly interrupted: RunRecord[] = [];
 
   constructor(config: Config, github: GitHub, store: Store, repoDir: string) {
     this.config = config;
@@ -45,9 +46,23 @@ export class Orchestrator {
       } else {
         run.endedAt = new Date().toISOString();
         run.result = "interrompu (orchestrateur redémarré)";
+        this.interrupted.push(run);
       }
     }
     store.save();
+  }
+
+  // Runs cut by a restart left « en-cours » on their issue or PR: the task would then look
+  // taken forever and never be offered again. Their pushed work is resumed on the next launch.
+  async releaseInterruptedRuns(): Promise<void> {
+    for (const run of this.interrupted.splice(0)) {
+      const target = run.kind === "fix" && run.pr !== undefined ? run.pr : run.issue;
+      await this.github.setLabels(target, [], [STATUS_LABELS.running]);
+      this.store.log(
+        "warn",
+        `Run de ${run.agent} sur #${target} coupé par le redémarrage : tâche libérée, le travail poussé sera repris`,
+      );
+    }
   }
 
   async refresh(): Promise<void> {
