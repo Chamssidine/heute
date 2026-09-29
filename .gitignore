@@ -1,0 +1,38 @@
+# Données réelles et documents de travail : jamais dans le dépôt
+private/
+
+# Secrets et environnement
+.env
+.env.*
+!.env.example
+google-services.json
+GoogleService-Info.plist
+*.jks
+*.keystore
+*.p8
+*.p12
+*.mobileprovision
+
+# Dépendances et builds
+node_modules/
+.expo/
+dist/
+build/
+.next/
+out/
+android/
+ios/
+*.apk
+*.aab
+*.ipa
+
+# Supabase local
+supabase/.branches/
+supabase/.temp/
+
+# Outils et système
+.mcp.json
+.DS_Store
+Thumbs.db
+*.log
+coverage/
