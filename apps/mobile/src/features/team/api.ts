@@ -12,7 +12,7 @@ export async function fetchTeamShifts(day: string): Promise<RawTeamShift[]> {
     throw error;
   }
 
-  return (data as RawTeamShift[] | null) ?? [];
+  return data ?? [];
 }
 
 /**

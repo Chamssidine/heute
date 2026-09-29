@@ -1,6 +1,7 @@
 import { AppState, type AppStateStatus } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { createClient } from "@supabase/supabase-js";
+import type { Database } from "@heute/domain";
 
 /**
  * Adaptateur de stockage sécurisé pour React Native / Expo utilisant SecureStore.
@@ -53,7 +54,7 @@ const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_KEY ?? "";
 /**
  * Client Supabase unique pour l'application mobile.
  */
-export const supabase = createClient(supabaseUrl, supabaseKey, {
+export const supabase = createClient<Database>(supabaseUrl, supabaseKey, {
   auth: {
     storage: ExpoSecureStoreAdapter,
     autoRefreshToken: true,

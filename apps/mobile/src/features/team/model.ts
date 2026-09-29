@@ -1,4 +1,4 @@
-import { formatHHMM } from "@heute/domain";
+import { formatHHMM, type Database } from "@heute/domain";
 
 /**
  * Types de service possibles dans l'interface de l'équipe (screens.md §6.4 et copy.md §7.1).
@@ -25,19 +25,18 @@ export const TEAM_SHIFT_BADGE_LABELS: Partial<Record<TeamShiftType, string>> = {
   td: "TD",
 };
 
+type RpcTeamShift = Database["public"]["Functions"]["team_shifts"]["Returns"][number];
+
 /**
- * Données brutes d'un service issues de la RPC `team_shifts(day)` selon le contrat #27.
+ * Données brutes d'un service issues de la RPC `team_shifts(day)` selon le contrat généré.
+ * Dérivé de Database["public"]["Functions"]["team_shifts"]["Returns"][number].
  */
-export interface RawTeamShift {
-  employee_id: string;
-  display_name: string;
-  department: "kueche" | "housekeeping" | "bfd" | "rezeption" | string;
-  type: string;
+export type RawTeamShift = Omit<RpcTeamShift, "start1" | "end1" | "start2" | "end2"> & {
   start1?: number | null;
   end1?: number | null;
   start2?: number | null;
   end2?: number | null;
-}
+};
 
 /**
  * Représentation d'un service d'un membre de l'équipe pour l'interface (Agent U).
@@ -45,19 +44,11 @@ export interface RawTeamShift {
  */
 export interface TeamShift {
   id: string;
-  employeeId: string;
   name: string;
-  displayName: string;
-  department: string;
   type: TeamShiftType;
   label: string;
   badgeLabel: string | null;
   hours: string;
-  timeRange?: string | null;
-  start1?: number | null;
-  end1?: number | null;
-  start2?: number | null;
-  end2?: number | null;
 }
 
 /**
@@ -68,18 +59,17 @@ export type TeamGroupId = "kueche" | "housekeeping_bfd" | "nicht_da";
 /**
  * Titres allemands des groupes selon screens.md §6.4.
  */
-export const TEAM_GROUP_TITLES = {
+export const TEAM_GROUP_TITLES: Record<TeamGroupId, string> = {
   kueche: "Küche",
   housekeeping_bfd: "Housekeeping / BFD",
   nicht_da: "Nicht da",
-  rezeption: "Rezeption",
-} as const;
+};
 
 /**
  * Groupe d'employés dans la vue Team (Küche, Housekeeping/BFD, Nicht da).
  */
 export interface TeamGroup {
-  id: TeamGroupId | string;
+  id: TeamGroupId;
   title: string;
   shifts: TeamShift[];
 }
@@ -175,32 +165,13 @@ export function toTeamShift(raw: RawTeamShift): TeamShift {
   const badgeLabel = TEAM_SHIFT_BADGE_LABELS[type] ?? null;
   const hours = formatTeamShiftHours({ ...raw, type });
 
-  let timeRange: string | null = null;
-  if (type === "normal" && raw.start1 != null && raw.end1 != null) {
-    timeRange = `${formatHHMM(raw.start1)}–${formatHHMM(raw.end1)}`;
-  } else if (type === "td" && raw.start1 != null && raw.end1 != null) {
-    const slot1 = `${formatHHMM(raw.start1)}–${formatHHMM(raw.end1)}`;
-    timeRange =
-      raw.start2 != null && raw.end2 != null
-        ? `${slot1} · ${formatHHMM(raw.start2)}–${formatHHMM(raw.end2)}`
-        : slot1;
-  }
-
   return {
     id: raw.employee_id,
-    employeeId: raw.employee_id,
     name: raw.display_name,
-    displayName: raw.display_name,
-    department: raw.department,
     type,
     label,
     badgeLabel,
     hours,
-    timeRange,
-    start1: raw.start1 ?? null,
-    end1: raw.end1 ?? null,
-    start2: raw.start2 ?? null,
-    end2: raw.end2 ?? null,
   };
 }
 
@@ -208,10 +179,11 @@ export function toTeamShift(raw: RawTeamShift): TeamShift {
  * Détermine le groupe d'affectation selon screens.md §6.4 :
  * - Toute personne non présente (frei, abwesend) va dans « Nicht da »
  * - Les personnes en cuisine vont dans « Küche »
- * - Les personnes en ménage ou volontariat vont dans « Housekeeping / BFD »
+ * - Les personnes en ménage, volontariat ou autre département (ex. rezeption) vont dans « Housekeeping / BFD »
  */
-export function getTeamGroupId(shift: TeamShift): TeamGroupId | string {
-  if (shift.type === "frei" || shift.type === "abwesend") {
+export function getTeamGroupId(shift: { type: string; department: string }): TeamGroupId {
+  const normalizedType = normalizeTeamShiftType(shift.type);
+  if (normalizedType === "frei" || normalizedType === "abwesend") {
     return "nicht_da";
   }
 
@@ -219,42 +191,28 @@ export function getTeamGroupId(shift: TeamShift): TeamGroupId | string {
   if (dept === "kueche") {
     return "kueche";
   }
-  if (dept === "housekeeping" || dept === "bfd") {
-    return "housekeeping_bfd";
-  }
 
-  return dept;
+  return "housekeeping_bfd";
 }
 
 /**
  * Groupe les services par Küche, Housekeeping/BFD et Nicht da selon screens.md §6.4.
  * Trie les personnes par ordre alphabétique dans chaque groupe.
  */
-export function groupTeamShifts(
-  shifts: readonly RawTeamShift[] | readonly TeamShift[],
-): TeamGroup[] {
-  const teamShifts: TeamShift[] = shifts.map((s) => ("badgeLabel" in s ? s : toTeamShift(s)));
-
+export function groupTeamShifts(shifts: readonly RawTeamShift[]): TeamGroup[] {
   const kuecheShifts: TeamShift[] = [];
   const hkBfdShifts: TeamShift[] = [];
   const nichtDaShifts: TeamShift[] = [];
-  const otherGroupsMap = new Map<string, TeamShift[]>();
 
-  for (const shift of teamShifts) {
-    const groupId = getTeamGroupId(shift);
+  for (const raw of shifts) {
+    const shift = toTeamShift(raw);
+    const groupId = getTeamGroupId(raw);
     if (groupId === "kueche") {
       kuecheShifts.push(shift);
     } else if (groupId === "housekeeping_bfd") {
       hkBfdShifts.push(shift);
-    } else if (groupId === "nicht_da") {
-      nichtDaShifts.push(shift);
     } else {
-      const existing = otherGroupsMap.get(groupId);
-      if (existing) {
-        existing.push(shift);
-      } else {
-        otherGroupsMap.set(groupId, [shift]);
-      }
+      nichtDaShifts.push(shift);
     }
   }
 
@@ -263,7 +221,7 @@ export function groupTeamShifts(
   hkBfdShifts.sort(sortByName);
   nichtDaShifts.sort(sortByName);
 
-  const groups: TeamGroup[] = [
+  return [
     {
       id: "kueche",
       title: TEAM_GROUP_TITLES.kueche,
@@ -280,26 +238,12 @@ export function groupTeamShifts(
       shifts: nichtDaShifts,
     },
   ];
-
-  for (const [id, extraShifts] of otherGroupsMap.entries()) {
-    extraShifts.sort(sortByName);
-    groups.push({
-      id,
-      title: id in TEAM_GROUP_TITLES ? TEAM_GROUP_TITLES[id as keyof typeof TEAM_GROUP_TITLES] : id,
-      shifts: extraShifts,
-    });
-  }
-
-  return groups;
 }
 
 /**
  * Construit un TeamDay à partir d'une liste de services pour une date donnée.
  */
-export function createTeamDay(
-  date: string,
-  shifts: readonly RawTeamShift[] | readonly TeamShift[],
-): TeamDay {
+export function createTeamDay(date: string, shifts: readonly RawTeamShift[]): TeamDay {
   return {
     date,
     groups: groupTeamShifts(shifts),

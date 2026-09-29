@@ -3,14 +3,6 @@ import type { TeamDay } from "./model.ts";
 import { teamDayFixture } from "./model.ts";
 
 /**
- * Clés de cache TanStack Query pour les requêtes d'équipe.
- */
-export const teamKeys = {
-  all: ["team"] as const,
-  day: (date: string) => [...teamKeys.all, "day", date] as const,
-};
-
-/**
  * Hook provisoire pour l'écran « Team ».
  * Renvoie un ViewState<TeamDay> basé sur la fixture d'une journée réaliste,
  * ou status: "empty" pour toute date différente de la fixture,
