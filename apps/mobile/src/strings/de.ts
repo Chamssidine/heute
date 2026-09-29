@@ -55,6 +55,7 @@ export const strings = {
     week: "Woche",
     month: "Monat",
     sundayBonus: "(Sonntag)",
+    weekUnavailable: "Die Wochenansicht ist noch nicht verfügbar.",
     balanceHeader: (ist: string, soll: string) => `IST ${ist} / Soll ${soll} Std.`,
     monthNames: [
       "Januar",

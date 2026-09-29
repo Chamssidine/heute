@@ -8,7 +8,7 @@ const WEEKDAY_NAMES = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"] as const;
 export function formatShiftDate(dateStr: string): string {
   const parts = dateStr.split("-");
   if (parts.length !== 3) {
-    return dateStr;
+    throw new Error(`Invalid shift date (expected YYYY-MM-DD): ${dateStr}`);
   }
   const year = Number(parts[0]);
   const month = Number(parts[1]);

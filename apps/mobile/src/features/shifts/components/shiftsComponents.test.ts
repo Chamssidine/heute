@@ -17,8 +17,8 @@ describe("features/shifts/components (P2-04 [U])", () => {
       assert.equal(formatShiftDate("2026-10-05"), "Mo 05.10.");
     });
 
-    it("renvoie la chaîne d'origine si le format est invalide", () => {
-      assert.equal(formatShiftDate("invalid"), "invalid");
+    it("lève une erreur explicite si le format est invalide", () => {
+      assert.throws(() => formatShiftDate("invalid"), /Invalid shift date/);
     });
   });
 

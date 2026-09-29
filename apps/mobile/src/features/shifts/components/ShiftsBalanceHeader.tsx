@@ -25,9 +25,6 @@ export const ShiftsBalanceHeader: React.FC<ShiftsBalanceHeaderProps> = ({
   const sollFormatted = formatHHMM(soll);
   const balanceLabel = strings.shifts.balanceHeader(istFormatted, sollFormatted);
 
-  const progressRatio = soll > 0 ? Math.min(Math.max(ist / soll, 0), 1) : 0;
-  const progressPercent = Math.round(progressRatio * 100);
-
   const a11yLabel = `${monthName}, ${balanceLabel}`;
 
   return (
@@ -43,19 +40,6 @@ export const ShiftsBalanceHeader: React.FC<ShiftsBalanceHeaderProps> = ({
           {monthName}
         </Text>
         <Text style={styles.balanceText}>{balanceLabel}</Text>
-      </View>
-
-      <View
-        style={styles.progressBarTrack}
-        accessible={true}
-        accessibilityRole="progressbar"
-        accessibilityValue={{
-          min: 0,
-          max: soll,
-          now: ist,
-        }}
-      >
-        <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
       </View>
     </View>
   );
@@ -74,7 +58,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: theme.space[3],
     flexWrap: "wrap",
     gap: theme.space[2],
   },
@@ -86,19 +69,6 @@ const styles = StyleSheet.create({
     ...theme.typography.bodyStrong,
     ...theme.tabularNums,
     color: theme.colors.text,
-  },
-  progressBarTrack: {
-    height: 8,
-    backgroundColor: theme.colors.surfaceMuted,
-    borderRadius: theme.radius.full,
-    overflow: "hidden",
-    borderWidth: theme.borders.width,
-    borderColor: theme.colors.border,
-  },
-  progressBarFill: {
-    height: "100%",
-    backgroundColor: theme.colors.primary,
-    borderRadius: theme.radius.full,
   },
 });
 
