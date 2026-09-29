@@ -2,6 +2,9 @@ import type { AgentConfig } from "./config.ts";
 
 const AUTONOMY = `Tu travailles sans humain : ne pose aucune question et n'attends aucune réponse.
 En cas d'ambiguïté, choisis l'option la plus simple conforme aux règles, et note-la dans la PR.
+Seules ces commandes shell sont autorisées, toute autre est refusée (même node -v ou npm -v) :
+git, npm run typecheck|lint|test|format, npm test, npm install, npm ci,
+npx prettier|eslint|tsc|expo, gh issue view|comment, gh pr create|view|diff|comment|list.
 Lance une seule commande à la fois, sans ; && | ni redirection : les enchaînements sont refusés.
 Appelle \`gh\` par son nom, sans chemin complet. Si une commande est refusée, n'essaie pas de la
 contourner : note-la dans la PR (ou dans l'issue si tu ne peux pas ouvrir de PR).

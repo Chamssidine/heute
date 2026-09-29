@@ -29,3 +29,26 @@ test("antigravity: agents edit files, reviewers stay read-only", () => {
   assert.ok(antigravity.launch(settings, "m", "agent", "p").args.includes("accept-edits"));
   assert.ok(antigravity.launch(settings, "m", "reviewer", "p").args.includes("plan"));
 });
+
+// Shape of a real run that ended on a refused command (agy 1.0.12, shortened).
+const refusedRun = [
+  '{"event":"init","conversation_id":"conv-1","init":{"model":"m"}}',
+  '{"event":"step_update","step_update":{"state":"ERROR","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"node -v"},"error":{"type":"TOOL_ERROR","message":"permission check failed for command"}}}}',
+  '{"event":"step_update","step_update":{"state":"ERROR","step_type":"tool","tool_name":"view_file","tool_info":{"name":"view_file","parameters":{},"error":{"type":"TOOL_ERROR","message":"failed to read file"}}}}',
+  '{"event":"result","result":{"status":"SUCCESS","response":"","denied_actions":[{"action":"command"}]}}',
+].join("\n");
+
+test("antigravity: finds refused commands, not ordinary tool errors", () => {
+  assert.deepEqual(antigravity.resume?.refusedCommands(refusedRun), ["node -v"]);
+  assert.equal(antigravity.resume?.conversationId(refusedRun), "conv-1");
+});
+
+test("antigravity: a resume continues the same conversation", () => {
+  const settings = { adapter: "antigravity", command: "agy.exe" };
+  const spec = antigravity.resume?.launch(settings, "m", "agent", "conv-1", "continue");
+  assert.ok(spec);
+  const args = spec.args;
+  assert.equal(args[args.indexOf("--conversation") + 1], "conv-1");
+  assert.equal(args[args.indexOf("-p") + 1], "continue");
+  assert.ok(args.includes("accept-edits"));
+});

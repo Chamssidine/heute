@@ -1,4 +1,26 @@
-import { parseJson, withExtra, type CliAdapter } from "./types.ts";
+import { parseJson, withExtra, type CliAdapter, type CliSettings, type Role } from "./types.ts";
+
+function baseArgs(model: string, role: Role): string[] {
+  return [
+    "--model",
+    model,
+    "--output-format",
+    "stream-json",
+    "--mode",
+    role === "agent" ? "accept-edits" : "plan",
+  ];
+}
+
+function events(stdout: string): Record<string, unknown>[] {
+  return stdout
+    .split(/\r?\n/)
+    .map(parseJson)
+    .filter((e): e is Record<string, unknown> => e !== undefined);
+}
+
+function withArgs(settings: CliSettings, role: Role, args: string[]) {
+  return { command: settings.command, args: withExtra(settings, role, args), stdinPrompt: "" };
+}
 
 // Antigravity CLI (`agy`). In print mode it cannot ask for permission: file edits are
 // allowed by `--mode accept-edits`, and every shell command must match an allow-rule
@@ -9,17 +31,36 @@ export const antigravity: CliAdapter = {
   verified: true,
   mode: "process",
   launch(settings, model, role, prompt) {
-    const args = [
-      "-p",
-      prompt,
-      "--model",
-      model,
-      "--output-format",
-      "stream-json",
-      "--mode",
-      role === "agent" ? "accept-edits" : "plan",
-    ];
-    return { command: settings.command, args: withExtra(settings, role, args), stdinPrompt: "" };
+    return withArgs(settings, role, ["-p", prompt, ...baseArgs(model, role)]);
+  },
+  // In print mode agy ends the turn at the first refused command; `--conversation`
+  // continues the same conversation, with all its context (verified on agy 1.0.12).
+  resume: {
+    refusedCommands(stdout) {
+      return events(stdout).flatMap((e) => {
+        const step = e["step_update"] as Record<string, unknown> | undefined;
+        const info = (step?.["tool_info"] ?? {}) as Record<string, unknown>;
+        const error = (info["error"] ?? {}) as Record<string, unknown>;
+        const params = (info["parameters"] ?? {}) as Record<string, unknown>;
+        const refused =
+          step?.["state"] === "ERROR" && String(error["message"] ?? "").includes("permission");
+        return refused ? [String(params["CommandLine"] ?? step?.["tool_name"])] : [];
+      });
+    },
+    conversationId(stdout) {
+      const init = events(stdout).find((e) => e["event"] === "init");
+      const id = init?.["conversation_id"];
+      return typeof id === "string" ? id : undefined;
+    },
+    launch(settings, model, role, conversationId, message) {
+      return withArgs(settings, role, [
+        "-p",
+        message,
+        "--conversation",
+        conversationId,
+        ...baseArgs(model, role),
+      ]);
+    },
   },
   summarize(line) {
     const e = parseJson(line);
