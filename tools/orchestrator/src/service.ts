@@ -65,7 +65,7 @@ export class Orchestrator {
     const agent = this.requireAgent(agentId);
     if (this.running.has(agentId)) throw new Error(`L'agent ${agentId} travaille déjà`);
     await this.refresh();
-    const issue = nextIssue(agent.label, this.store.live.issues);
+    const issue = nextIssue(agent.label, this.store.live.issues, this.issuesWithOpenPr());
     if (!issue) throw new Error(`Aucune tâche prête pour l'agent ${agentId}`);
     const branch = `${agent.branchPrefix}/i${issue.number}`;
     await ensureWorktree(this.repoDir, agent.worktree);
@@ -339,6 +339,11 @@ export class Orchestrator {
     return match ? Number(match[1]) : undefined;
   }
 
+  private issuesWithOpenPr(): Set<number> {
+    const numbers = this.store.live.prs.map((p) => this.issueOfBranch(p.headRefName));
+    return new Set(numbers.filter((n): n is number => n !== undefined));
+  }
+
   private requireAgent(id: string) {
     const agent = this.config.agents[id];
     if (!agent) throw new Error(`Agent inconnu : ${id}`);
@@ -376,7 +381,7 @@ export class Orchestrator {
         verified: adapter.verified,
         run: current?.run,
         lines: live.liveLines[id] ?? [],
-        queue: queueFor(a.label, live.issues).map((q) => ({
+        queue: queueFor(a.label, live.issues, this.issuesWithOpenPr()).map((q) => ({
           number: q.issue.number,
           title: q.issue.title,
           ready: q.ready,
