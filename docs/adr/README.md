@@ -1,0 +1,15 @@
+# Index des ADR
+
+- [0001 – Stack et versions](0001-stack-et-versions.md)
+- [0002 – Stack du cahier conservée](0002-stack-du-cahier.md)
+- [0003 – Monorepo npm workspaces](0003-monorepo-npm-workspaces.md)
+- [0004 – Un seul paquet partagé : packages/domain](0004-paquet-domain.md)
+- [0005 – Lectures par tables, écritures par RPC](0005-lectures-tables-ecritures-rpc.md)
+- [0006 – audit_log générique par trigger](0006-audit-log-trigger.md)
+- [0007 – Masquage et agrégats par fonctions SECURITY DEFINER](0007-fonctions-security-definer.md)
+- [0008 – Realtime comme signal d'invalidation](0008-realtime-invalidation.md)
+- [0009 – État séparé par nature, sans store global](0009-etat-sans-store-global.md)
+- [0010 – Admin Next.js en mode client](0010-admin-mode-client.md)
+- [0011 – Temps en minutes depuis minuit](0011-temps-en-minutes.md)
+- [0012 – Textes dans un dictionnaire typé de.ts](0012-textes-de-ts.md)
+- [0013 – Bibliothèque UI de l'admin : Mantine](0013-ui-admin-mantine.md)
