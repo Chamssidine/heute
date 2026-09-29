@@ -9,7 +9,12 @@ import { fixPrompt, taskPrompt } from "./prompts.ts";
 import { reviewComment, reviewPullRequest } from "./review.ts";
 import { startRun, type RunHandle } from "./runner.ts";
 import type { RunKind, RunRecord, Store } from "./store.ts";
-import { ensureWorktree, prepareWorktree } from "./worktree.ts";
+import {
+  deleteLocalBranch,
+  ensureWorktree,
+  prepareWorktree,
+  remoteBranchExists,
+} from "./worktree.ts";
 
 const ALL_STATUS = Object.values(STATUS_LABELS);
 const TOOL_NAMES: Record<string, string> = {
@@ -64,7 +69,14 @@ export class Orchestrator {
     if (!issue) throw new Error(`Aucune tâche prête pour l'agent ${agentId}`);
     const branch = `${agent.branchPrefix}/i${issue.number}`;
     await ensureWorktree(this.repoDir, agent.worktree);
-    await prepareWorktree(agent.worktree, { detach: "main" });
+    // Resume the pushed work of an interrupted run instead of starting over.
+    const resume = await remoteBranchExists(agent.worktree, branch);
+    if (resume) {
+      await prepareWorktree(agent.worktree, { branch });
+    } else {
+      await prepareWorktree(agent.worktree, { detach: "main" });
+      await deleteLocalBranch(agent.worktree, branch);
+    }
     await this.github.setLabels(issue.number, [STATUS_LABELS.running]);
     this.start(
       agentId,
@@ -72,7 +84,7 @@ export class Orchestrator {
       issue.number,
       undefined,
       branch,
-      taskPrompt(agentId, agent, issue.number, branch),
+      taskPrompt(agentId, agent, issue.number, branch, resume),
     );
   }
 
