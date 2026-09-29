@@ -6,41 +6,73 @@
     <title>Heute · Orchestrateur</title>
     <style>
       :root {
-        --bg: #f5f6f8;
+        --bg: #f6f6f4;
         --surface: #ffffff;
-        --muted-bg: #eef0f3;
-        --border: #cdd2da;
-        --text: #111827;
-        --muted: #4b5563;
-        --primary: #1d4ed8;
-        --on-primary: #ffffff;
-        --ok: #15803d;
-        --ok-bg: #dcfce7;
-        --warn: #b45309;
-        --warn-bg: #fef3c7;
-        --bad: #b91c1c;
-        --bad-bg: #fee2e2;
-        --code-bg: #111827;
-        --code-text: #e5e7eb;
+        --surface-muted: #efefec;
+        --border: rgba(20, 20, 18, 0.12);
+        --border-strong: rgba(20, 20, 18, 0.22);
+        --text: #1a1a18;
+        --text-2: #5c5c57;
+        --text-3: #8a8a84;
+        --accent: #2563eb;
+        --on-accent: #ffffff;
+        --accent-bg: #e6eefc;
+        --accent-text: #1e4fb8;
+        --ok-bg: #e5f3e9;
+        --ok-text: #1f6b3a;
+        --ok-border: #8cc9a0;
+        --warn-bg: #fbf0d9;
+        --warn-text: #7a4d06;
+        --warn-border: #e2b765;
+        --bad-bg: #fbe7e5;
+        --bad-text: #9b2c22;
+        --bad-border: #e3a29a;
+        --violet-bg: #ecebfd;
+        --violet-text: #4c43b0;
+        --aqua-bg: #dff4ef;
+        --aqua-text: #0d6552;
+        --magenta-bg: #fbe8f1;
+        --magenta-text: #93305a;
+        --gray-bg: #ecebe6;
+        --gray-text: #4a4a45;
+        --code-bg: #16161a;
+        --code-text: #e4e4e0;
+        --radius: 8px;
+        --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg: #0f141a;
-          --surface: #171d25;
-          --muted-bg: #202833;
-          --border: #2e3846;
-          --text: #f2f4f7;
-          --muted: #a9b2c0;
-          --primary: #8ab4ff;
-          --on-primary: #0b1220;
-          --ok: #4ade80;
-          --ok-bg: #14301f;
-          --warn: #fbbf24;
+          --bg: #121210;
+          --surface: #1c1c1a;
+          --surface-muted: #262623;
+          --border: rgba(240, 240, 232, 0.12);
+          --border-strong: rgba(240, 240, 232, 0.24);
+          --text: #f1f1ec;
+          --text-2: #b3b3ab;
+          --text-3: #85857e;
+          --accent: #7aa7ff;
+          --on-accent: #0b1220;
+          --accent-bg: #1c2b4a;
+          --accent-text: #a9c5ff;
+          --ok-bg: #16301f;
+          --ok-text: #86d3a0;
+          --ok-border: #2f6b43;
           --warn-bg: #33270d;
-          --bad: #f87171;
-          --bad-bg: #3a1717;
-          --code-bg: #0b0f14;
-          --code-text: #d1d5db;
+          --warn-text: #f0c46a;
+          --warn-border: #7a5a18;
+          --bad-bg: #3a1a17;
+          --bad-text: #f3a39a;
+          --bad-border: #7c3129;
+          --violet-bg: #2a2754;
+          --violet-text: #c3befa;
+          --aqua-bg: #123a32;
+          --aqua-text: #8fdcc8;
+          --magenta-bg: #3d1a2b;
+          --magenta-text: #f2a9c9;
+          --gray-bg: #2c2c29;
+          --gray-text: #d0d0c9;
+          --code-bg: #0c0c0e;
+          --code-text: #d7d7d2;
         }
       }
       * {
@@ -51,607 +83,1248 @@
         background: var(--bg);
         color: var(--text);
         font:
-          15px/1.45 system-ui,
+          15px/1.5 system-ui,
           -apple-system,
           "Segoe UI",
           Roboto,
           sans-serif;
       }
+      .wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 20px 24px 64px;
+      }
       header {
         display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
         align-items: center;
         justify-content: space-between;
-        padding: 16px 24px;
-        background: var(--surface);
-        border-bottom: 1px solid var(--border);
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 24px;
       }
-      header h1 {
+      .brand {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+      }
+      .brand strong {
         font-size: 20px;
-        margin: 0;
+        font-weight: 600;
       }
-      main {
-        padding: 16px 24px 48px;
-        display: grid;
-        gap: 24px;
-        max-width: 1400px;
-        margin: 0 auto;
+      .muted {
+        color: var(--text-2);
       }
-      h2 {
-        font-size: 17px;
-        margin: 0 0 12px;
+      .faint {
+        color: var(--text-3);
       }
-      .meta {
-        color: var(--muted);
+      .small {
         font-size: 13px;
       }
-      .grid {
+      .tiny {
+        font-size: 12px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+        background: var(--text-3);
+      }
+      .dot.on {
+        background: #22a45a;
+      }
+      .dot.off {
+        background: #d9483b;
+      }
+      h2 {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-2);
+        margin: 0 0 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      section {
+        margin-bottom: 28px;
+      }
+      .count {
+        font-weight: 500;
+        color: var(--text-3);
+      }
+      button {
+        font: inherit;
+        font-size: 14px;
+        min-height: 36px;
+        padding: 0 14px;
+        border-radius: var(--radius);
+        border: 1px solid var(--border-strong);
+        background: var(--surface);
+        color: var(--text);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+      }
+      button:hover {
+        background: var(--surface-muted);
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--on-accent);
+        font-weight: 600;
+      }
+      button.primary:hover {
+        filter: brightness(1.08);
+      }
+      button.danger {
+        color: var(--bad-text);
+        border-color: var(--bad-border);
+      }
+      button.ghost {
+        border-color: transparent;
+        background: transparent;
+      }
+      button.ghost:hover {
+        background: var(--surface-muted);
+      }
+      button:focus-visible,
+      a:focus-visible,
+      .agent:focus-visible,
+      textarea:focus-visible,
+      input:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 2px;
+      }
+      a {
+        color: var(--accent-text);
+      }
+      svg.i {
+        width: 18px;
+        height: 18px;
+        flex: none;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .inbox {
         display: grid;
-        gap: 16px;
-        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 8px;
+      }
+      .item {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px 16px;
+      }
+      .item .ico {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: none;
+      }
+      .item .body {
+        flex: 1;
+        min-width: 0;
+      }
+      .item .title {
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .item .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .tone-ok {
+        background: var(--ok-bg);
+        color: var(--ok-text);
+      }
+      .tone-warn {
+        background: var(--warn-bg);
+        color: var(--warn-text);
+      }
+      .tone-bad {
+        background: var(--bad-bg);
+        color: var(--bad-text);
+      }
+      .tone-accent {
+        background: var(--accent-bg);
+        color: var(--accent-text);
+      }
+      .tone-gray {
+        background: var(--gray-bg);
+        color: var(--gray-text);
+      }
+      .empty {
+        background: var(--surface);
+        border: 1px dashed var(--border-strong);
+        border-radius: 12px;
+        padding: 18px;
+        color: var(--text-2);
+        text-align: center;
+      }
+      .agents {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      }
+      .agent {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px;
+        cursor: pointer;
+        text-align: left;
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+      }
+      .agent:hover {
+        border-color: var(--border-strong);
+      }
+      .avatar {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 13px;
+        flex: none;
+      }
+      .pill {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 2px 9px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+      .logline {
+        font: 12px/1.4 var(--mono);
+        color: var(--text-2);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .board {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(170px, 1fr));
+        gap: 10px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+      .col {
+        background: var(--surface-muted);
+        border-radius: 12px;
+        padding: 10px;
+        min-height: 120px;
+      }
+      .col h3 {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-2);
+        margin: 0 0 8px;
+        display: flex;
+        justify-content: space-between;
       }
       .card {
         background: var(--surface);
         border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 16px;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        min-width: 0;
-      }
-      .row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        align-items: center;
-      }
-      .spread {
-        justify-content: space-between;
-      }
-      .chip {
-        display: inline-flex;
-        align-items: center;
+        border-radius: var(--radius);
+        padding: 8px 10px;
+        margin-bottom: 6px;
+        font-size: 13px;
+        display: grid;
         gap: 4px;
-        padding: 2px 10px;
-        border-radius: 999px;
-        font-size: 12px;
-        font-weight: 600;
-        background: var(--muted-bg);
-        color: var(--muted);
       }
-      .chip.ok {
-        background: var(--ok-bg);
-        color: var(--ok);
+      .card .top {
+        display: flex;
+        align-items: center;
+        gap: 6px;
       }
-      .chip.warn {
-        background: var(--warn-bg);
-        color: var(--warn);
+      .card .num {
+        color: var(--text-3);
+        font-variant-numeric: tabular-nums;
       }
-      .chip.bad {
-        background: var(--bad-bg);
-        color: var(--bad);
+      .card .ttl {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
       }
-      button,
-      select {
-        font: inherit;
-        min-height: 40px;
-        padding: 0 14px;
-        border-radius: 8px;
-        cursor: pointer;
+      .card.waiting {
+        opacity: 0.75;
+      }
+      .mini {
+        width: 20px;
+        height: 20px;
+        font-size: 11px;
+      }
+      dialog {
         border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 0;
+        width: min(640px, calc(100vw - 32px));
         background: var(--surface);
         color: var(--text);
       }
-      button.primary {
-        background: var(--primary);
-        color: var(--on-primary);
-        border-color: var(--primary);
+      dialog::backdrop {
+        background: rgba(10, 10, 8, 0.45);
+      }
+      .dlg-head {
+        padding: 18px 20px 6px;
+        font-size: 17px;
         font-weight: 600;
       }
-      button.danger {
-        color: var(--bad);
-        border-color: var(--bad);
+      .dlg-body {
+        padding: 6px 20px 12px;
+        display: grid;
+        gap: 12px;
+        max-height: 65vh;
+        overflow: auto;
       }
-      button:disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
-      }
-      button:focus-visible,
-      select:focus-visible,
-      a:focus-visible {
-        outline: 3px solid var(--primary);
-        outline-offset: 2px;
+      .dlg-foot {
+        padding: 12px 20px 18px;
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+        flex-wrap: wrap;
       }
       pre.log {
         margin: 0;
         background: var(--code-bg);
         color: var(--code-text);
-        border-radius: 8px;
-        padding: 10px;
-        font:
-          12px/1.5 ui-monospace,
-          Consolas,
-          monospace;
-        max-height: 260px;
-        overflow: auto;
+        border-radius: var(--radius);
+        padding: 12px;
+        font: 12px/1.55 var(--mono);
         white-space: pre-wrap;
         word-break: break-word;
+        max-height: 340px;
+        overflow: auto;
       }
-      ul.list {
+      textarea {
+        font: inherit;
+        width: 100%;
+        min-height: 90px;
+        padding: 10px;
+        border-radius: var(--radius);
+        border: 1px solid var(--border-strong);
+        background: var(--surface);
+        color: var(--text);
+      }
+      .choice {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        cursor: pointer;
+      }
+      .choice:has(input:checked) {
+        border-color: var(--accent);
+        background: var(--accent-bg);
+      }
+      ul.plain {
         list-style: none;
         margin: 0;
         padding: 0;
         display: grid;
         gap: 6px;
       }
-      ul.list li {
-        display: flex;
-        gap: 8px;
-        align-items: baseline;
-        flex-wrap: wrap;
-      }
-      a {
-        color: var(--primary);
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        overflow: hidden;
-      }
-      th,
-      td {
-        text-align: left;
-        padding: 10px 12px;
-        border-bottom: 1px solid var(--border);
-        vertical-align: top;
-      }
-      th {
-        font-size: 13px;
-        color: var(--muted);
-        background: var(--muted-bg);
-      }
-      .table-wrap {
-        overflow-x: auto;
-      }
-      .empty {
-        color: var(--muted);
-        font-style: italic;
-      }
       #toast {
         position: fixed;
-        bottom: 16px;
         left: 50%;
+        bottom: 20px;
         transform: translateX(-50%);
-        padding: 10px 16px;
-        border-radius: 8px;
         background: var(--text);
         color: var(--bg);
+        padding: 10px 16px;
+        border-radius: 10px;
+        font-size: 14px;
         display: none;
-        max-width: 90vw;
+        max-width: calc(100vw - 32px);
       }
-      details summary {
-        cursor: pointer;
-        color: var(--muted);
-        font-size: 13px;
+      .badge {
+        background: var(--bad-text);
+        color: var(--surface);
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 0 6px;
+        min-width: 18px;
+        text-align: center;
       }
       @media (max-width: 640px) {
-        header,
-        main {
-          padding-left: 16px;
-          padding-right: 16px;
+        .wrap {
+          padding: 16px;
+        }
+        .item {
+          flex-wrap: wrap;
+        }
+        .item .actions {
+          width: 100%;
+          justify-content: flex-start;
         }
       }
     </style>
   </head>
   <body>
-    <header>
-      <div>
-        <h1>Heute · Orchestrateur</h1>
-        <div class="meta" id="meta">Connexion…</div>
-      </div>
-      <div class="row">
-        <span class="chip" id="conn">hors ligne</span>
-        <button id="refresh">Actualiser GitHub</button>
-      </div>
-    </header>
-    <main>
+    <div class="wrap">
+      <header>
+        <div class="brand">
+          <strong>Heute</strong><span class="muted">orchestrateur</span>
+          <a id="repo" class="small" target="_blank" rel="noopener"></a>
+        </div>
+        <div class="row small">
+          <span class="dot" id="dot"></span><span class="muted" id="fresh">connexion…</span>
+          <button class="ghost" id="refresh" aria-label="Actualiser depuis GitHub"></button>
+          <button id="journal">Journal <span class="badge" id="errors" hidden></span></button>
+        </div>
+      </header>
+
+      <section aria-labelledby="h-inbox">
+        <h2 id="h-inbox">À toi <span class="count" id="inbox-count"></span></h2>
+        <div class="inbox" id="inbox"></div>
+      </section>
+
       <section aria-labelledby="h-agents">
         <h2 id="h-agents">Agents</h2>
-        <div class="grid" id="agents"></div>
+        <div class="agents" id="agents"></div>
       </section>
-      <section aria-labelledby="h-prs">
-        <h2 id="h-prs">Pull requests</h2>
-        <div class="table-wrap" id="prs"></div>
+
+      <section aria-labelledby="h-board">
+        <h2 id="h-board">Avancement</h2>
+        <div class="board" id="board"></div>
       </section>
-      <section aria-labelledby="h-review" class="card">
-        <h2 id="h-review">Relecture en direct</h2>
-        <pre class="log" id="review" aria-live="polite"></pre>
-      </section>
-      <section aria-labelledby="h-attn">
-        <h2 id="h-attn">À traiter par toi</h2>
-        <div id="attention"></div>
-      </section>
-      <div class="grid">
-        <section aria-labelledby="h-runs" class="card">
-          <h2 id="h-runs">Derniers lancements</h2>
-          <ul class="list" id="runs"></ul>
-        </section>
-        <section aria-labelledby="h-events" class="card">
-          <h2 id="h-events">Journal</h2>
-          <ul class="list" id="events"></ul>
-        </section>
-      </div>
-    </main>
-    <div id="toast" role="status"></div>
+    </div>
+
+    <dialog id="dlg" aria-labelledby="dlg-title">
+      <div class="dlg-head" id="dlg-title"></div>
+      <div class="dlg-body" id="dlg-body"></div>
+      <div class="dlg-foot" id="dlg-foot"></div>
+    </dialog>
+    <div id="toast" role="status" aria-live="polite"></div>
+
     <script>
       let state = null;
+      let connected = false;
       const $ = (id) => document.getElementById(id);
+
       // All GitHub text goes through textContent: never innerHTML.
       function h(tag, attrs = {}, ...children) {
         const el = document.createElement(tag);
         for (const [k, v] of Object.entries(attrs)) {
           if (k === "class") el.className = v;
           else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
-          else if (v !== false && v !== undefined) el.setAttribute(k, v === true ? "" : v);
+          else if (v !== false && v !== undefined && v !== null)
+            el.setAttribute(k, v === true ? "" : v);
         }
-        for (const c of children.flat())
-          if (c !== null && c !== undefined) el.append(c.nodeType ? c : String(c));
+        for (const c of children.flat()) {
+          if (c !== null && c !== undefined && c !== false) el.append(c.nodeType ? c : String(c));
+        }
         return el;
       }
-      function toast(text) {
-        const t = $("toast");
-        t.textContent = text;
-        t.style.display = "block";
-        clearTimeout(toast.timer);
-        toast.timer = setTimeout(() => (t.style.display = "none"), 5000);
+
+      const ICONS = {
+        merge:
+          '<circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 8v8M8 6h2a6 6 0 0 1 6 6"/>',
+        alert: '<path d="M12 4 2 20h20L12 4z"/><path d="M12 10v4M12 17v.5"/>',
+        back: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-2"/>',
+        play: '<path d="M7 4v16l13-8z"/>',
+        eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+        lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+        user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+        clipboard: '<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9z"/>',
+        x: '<path d="M6 6l12 12M18 6 6 18"/>',
+        refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+      };
+      function icon(name) {
+        const span = h("span");
+        span.innerHTML = `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
+        return span.firstChild;
       }
-      async function act(action, body = {}) {
-        const res = await fetch(`/api/actions/${action}`, {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-orchestrator": "1" },
-          body: JSON.stringify(body),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) toast(`Erreur : ${data.error ?? res.status}`);
-        else toast("Fait.");
+
+      const AGENT_TONES = ["violet", "aqua", "magenta", "gray"];
+      function avatar(agentId, small = false) {
+        const idx = Math.max(
+          0,
+          (state?.agents ?? []).findIndex((a) => a.id === agentId),
+        );
+        const tone = AGENT_TONES[idx] ?? "gray";
+        return h(
+          "span",
+          {
+            class: `avatar${small ? " mini" : ""}`,
+            style: `background:var(--${tone}-bg);color:var(--${tone}-text)`,
+            "aria-hidden": "true",
+          },
+          agentId ?? "·",
+        );
       }
-      const since = (iso) => {
-        const s = Math.floor((Date.now() - new Date(iso)) / 1000);
+
+      function ago(iso) {
+        if (!iso) return "—";
+        const s = Math.max(0, Math.floor((Date.now() - new Date(iso)) / 1000));
+        if (s < 60) return `il y a ${s} s`;
+        if (s < 3600) return `il y a ${Math.floor(s / 60)} min`;
+        return `il y a ${Math.floor(s / 3600)} h`;
+      }
+      function duration(iso) {
+        const s = Math.max(0, Math.floor((Date.now() - new Date(iso)) / 1000));
         return s < 60
           ? `${s} s`
           : s < 3600
             ? `${Math.floor(s / 60)} min`
             : `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`;
-      };
-      const time = (iso) =>
-        new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-      const issueLink = (n) =>
-        h(
-          "a",
-          {
-            href: `https://github.com/${state.repo}/issues/${n}`,
-            target: "_blank",
-            rel: "noopener",
-          },
-          `#${n}`,
-        );
-      const outcomeChip = (o) =>
-        o === "ready"
-          ? h("span", { class: "chip ok" }, "prête à merger")
-          : o === "changes"
-            ? h("span", { class: "chip warn" }, "corrections demandées")
-            : o === "human"
-              ? h("span", { class: "chip bad" }, "attention humaine")
-              : o
-                ? h("span", { class: "chip" }, o)
-                : h("span", { class: "chip" }, "pas encore relue");
+      }
 
-      function renderAgents() {
-        $("agents").replaceChildren(
-          ...state.agents.map((a) => {
-            const ready = a.queue.find((q) => q.ready);
-            const running = a.run;
-            return h(
-              "article",
-              { class: "card", "aria-label": `Agent ${a.id}` },
-              h(
-                "div",
-                { class: "row spread" },
-                h("strong", {}, `${a.id} · ${a.name}`),
-                running
-                  ? h("span", { class: "chip warn" }, `en cours · ${since(running.startedAt)}`)
-                  : h("span", { class: "chip ok" }, "libre"),
-              ),
-              h(
-                "div",
-                { class: "meta" },
-                `${a.cli} · ${a.model}`,
-                a.verified
-                  ? null
-                  : h(
-                      "span",
-                      { class: "chip warn", style: "margin-left:8px" },
-                      "adaptateur non vérifié",
-                    ),
-              ),
-              running
-                ? h(
-                    "div",
-                    {},
-                    running.kind === "fix" ? "Correction de la PR " : "Tâche ",
-                    issueLink(running.pr ?? running.issue),
-                    ` · ${running.branch}`,
-                  )
-                : h(
-                    "div",
-                    {},
-                    "Prochaine tâche : ",
-                    ready
-                      ? [issueLink(ready.number), ` ${ready.title}`]
-                      : h("span", { class: "empty" }, "aucune prête"),
+      function toast(text) {
+        const t = $("toast");
+        t.textContent = text;
+        t.style.display = "block";
+        clearTimeout(toast.timer);
+        toast.timer = setTimeout(() => (t.style.display = "none"), 4500);
+      }
+
+      async function act(action, body = {}, success = "C'est fait") {
+        try {
+          const res = await fetch(`/api/actions/${action}`, {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-orchestrator": "1" },
+            body: JSON.stringify(body),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            toast(data.error ?? `Échec (${res.status})`);
+            return false;
+          }
+          toast(success);
+          return true;
+        } catch {
+          toast("L'orchestrateur ne répond pas");
+          return false;
+        }
+      }
+
+      // ---- Dialog ------------------------------------------------------------------------
+      function openDialog({ title, body = [], actions = [] }) {
+        const dlg = $("dlg");
+        $("dlg-title").textContent = title;
+        $("dlg-body").replaceChildren(...body);
+        const close = () => dlg.close();
+        $("dlg-foot").replaceChildren(
+          // Focus lands on the harmless button, never on a merge or a stop.
+          h("button", { onclick: close, autofocus: true }, actions.length ? "Annuler" : "Fermer"),
+          ...actions.map((a) =>
+            h(
+              "button",
+              {
+                class: a.primary ? "primary" : a.danger ? "danger" : "",
+                onclick: async () => {
+                  if ((await a.run()) !== false) close();
+                },
+              },
+              a.label,
+            ),
+          ),
+        );
+        dlg.showModal();
+      }
+
+      const agentById = (id) => state.agents.find((a) => a.id === id);
+      const issueTitle = (n) => state.issues.find((i) => i.number === n)?.title ?? "";
+      const issueUrl = (n) => `https://github.com/${state.repo}/issues/${n}`;
+      const link = (href, text) => h("a", { href, target: "_blank", rel: "noopener" }, text);
+
+      function confirmMerge(pr) {
+        const risky = pr.review?.outcome !== "ready";
+        openDialog({
+          title: `Merger #${pr.number} dans main ?`,
+          body: [
+            h("p", { style: "margin:0" }, pr.title),
+            risky
+              ? h(
+                  "div",
+                  { class: "item tone-warn", style: "padding:10px 12px" },
+                  icon("alert"),
+                  h(
+                    "span",
+                    { class: "small" },
+                    pr.review?.reasons?.[0] ?? "Pas de relecture automatique pour cette PR.",
+                    " Lis le diff avant.",
                   ),
-              h(
-                "div",
-                { class: "row" },
+                )
+              : h(
+                  "p",
+                  { class: "muted small", style: "margin:0" },
+                  "Tests OK et relecture sans remarque bloquante.",
+                ),
+            link(`${pr.url}/files`, "Voir le diff sur GitHub"),
+          ],
+          actions: [
+            {
+              label: "Merger",
+              primary: true,
+              run: () => act("merge", { number: pr.number }, `#${pr.number} mergée`),
+            },
+          ],
+        });
+      }
+
+      function sendBack(pr) {
+        const note = h("textarea", {
+          "aria-label": "Note pour l'agent",
+          placeholder: "Ex. garde la fonction pure et ajoute un test pour le dimanche",
+        });
+        const reasons = [...(pr.review?.reasons ?? []), ...(pr.review?.reviewerComments ?? [])];
+        openDialog({
+          title: `Renvoyer #${pr.number} à l'agent ${pr.agent}`,
+          body: [
+            reasons.length
+              ? h(
+                  "div",
+                  {},
+                  h("div", { class: "small muted" }, "L'agent recevra ces remarques :"),
+                  h(
+                    "ul",
+                    {},
+                    reasons.map((r) => h("li", { class: "small" }, r)),
+                  ),
+                )
+              : null,
+            h("label", { class: "small muted" }, "Ta note (facultatif)"),
+            note,
+          ].filter(Boolean),
+          actions: [
+            {
+              label: "Renvoyer",
+              primary: true,
+              run: () =>
+                act(
+                  "sendback",
+                  { number: pr.number, note: note.value },
+                  `Agent ${pr.agent} relancé sur #${pr.number}`,
+                ),
+            },
+          ],
+        });
+      }
+
+      function chooseReviewer(pr) {
+        const name = "reviewer";
+        const choices = state.reviewers.map((r, i) =>
+          h(
+            "label",
+            { class: "choice" },
+            h("input", {
+              type: "radio",
+              name,
+              value: r.id,
+              checked: r.id === state.defaultReviewer || (i === 0 && !state.defaultReviewer),
+            }),
+            h(
+              "div",
+              {},
+              h("div", { style: "font-weight:600" }, r.id),
+              h("div", { class: "small muted" }, r.model, r.verified ? "" : " · pas encore testé"),
+            ),
+          ),
+        );
+        openDialog({
+          title: `Relire #${pr.number}`,
+          body: [
+            h(
+              "p",
+              { class: "small muted", style: "margin:0" },
+              "Validations (typecheck, lint, tests), puis avis du relecteur choisi. Rien n'est modifié.",
+            ),
+            ...choices,
+          ],
+          actions: [
+            {
+              label: "Relire",
+              primary: true,
+              run: () => {
+                const picked = document.querySelector(`input[name="${name}"]:checked`)?.value;
+                return act("review", { number: pr.number, reviewer: picked }, "Relecture lancée");
+              },
+            },
+          ],
+        });
+      }
+
+      function launch(agent, issue) {
+        return act("launch", { agent: agent.id }, `${agent.id} lancé sur #${issue.number}`);
+      }
+
+      // ---- Inbox: only what needs the human, one primary action each -------------------------
+      function inboxItems() {
+        const items = [];
+        const busyPr = (pr) =>
+          state.reviewing === pr.number || state.agents.some((a) => a.run?.pr === pr.number);
+        const weight = {
+          ready: 0,
+          human: 1,
+          changes: 2,
+          error: 3,
+          blocked: 4,
+          unreviewed: 5,
+          manual: 6,
+          launch: 7,
+        };
+
+        for (const pr of state.prs) {
+          if (busyPr(pr)) continue;
+          const r = pr.review;
+          const who = pr.agent ? `Agent ${pr.agent}` : "Hors agents";
+          const diff = h(
+            "button",
+            { onclick: () => window.open(`${pr.url}/files`, "_blank", "noopener") },
+            "Voir le diff",
+          );
+          if (!r) {
+            items.push({
+              kind: "unreviewed",
+              tone: "gray",
+              icon: "eye",
+              title: `#${pr.number} ${pr.title}`,
+              sub: `${who} · pas encore relue`,
+              actions: [
+                diff,
+                h("button", { class: "primary", onclick: () => chooseReviewer(pr) }, "Relire"),
+              ],
+            });
+          } else if (r.outcome === "ready") {
+            items.push({
+              kind: "ready",
+              tone: "ok",
+              icon: "merge",
+              title: `#${pr.number} ${pr.title}`,
+              sub: `${who} · prête à merger · relue par ${r.reviewer}`,
+              actions: [
+                diff,
+                h("button", { class: "primary", onclick: () => confirmMerge(pr) }, "Merger"),
+              ],
+            });
+          } else if (r.outcome === "changes") {
+            items.push({
+              kind: "changes",
+              tone: "warn",
+              icon: "back",
+              title: `#${pr.number} ${pr.title}`,
+              sub: `${who} · à corriger : ${r.reasons[0] ?? ""}`,
+              actions: [
+                diff,
+                pr.agent
+                  ? h(
+                      "button",
+                      { class: "primary", onclick: () => sendBack(pr) },
+                      "Renvoyer à l'agent",
+                    )
+                  : null,
+              ],
+            });
+          } else {
+            items.push({
+              kind: "human",
+              tone: "warn",
+              icon: "alert",
+              title: `#${pr.number} ${pr.title}`,
+              sub: `${who} · ${r.reasons[0] ?? "à vérifier"}`,
+              actions: [
+                pr.agent ? h("button", { onclick: () => sendBack(pr) }, "Renvoyer") : null,
+                h("button", { onclick: () => chooseReviewer(pr) }, "Relire"),
+                h(
+                  "button",
+                  { class: "primary", onclick: () => confirmMerge(pr) },
+                  "Examiner et merger",
+                ),
+              ],
+            });
+          }
+        }
+
+        for (const a of state.agents) {
+          if (a.run?.manual) {
+            items.push({
+              kind: "manual",
+              tone: "accent",
+              icon: "clipboard",
+              title: `Colle le prompt de ${a.id} dans ${a.tool}`,
+              sub: `Dossier ${a.run.worktree} · #${a.run.pr ?? a.run.issue}`,
+              actions: [
+                h(
+                  "button",
+                  { class: "danger", onclick: () => act("stop", { agent: a.id }, "Tâche annulée") },
+                  "Annuler",
+                ),
+                h("button", { onclick: () => act("done", { agent: a.id }) }, "Terminé"),
                 h(
                   "button",
                   {
                     class: "primary",
-                    disabled: Boolean(running) || !ready,
-                    onclick: () => act("launch", { agent: a.id }),
+                    onclick: async () => {
+                      try {
+                        await navigator.clipboard.writeText(a.run.prompt);
+                        toast("Prompt copié");
+                      } catch {
+                        showAgent(a);
+                      }
+                    },
                   },
-                  "Lancer la prochaine tâche",
+                  "Copier le prompt",
+                ),
+              ],
+            });
+          } else if (!a.run) {
+            const next = a.queue.find((q) => q.ready);
+            if (next) {
+              items.push({
+                kind: "launch",
+                tone: "accent",
+                icon: "play",
+                title: `Lancer ${a.id} sur #${next.number} ${next.title}`,
+                sub: `${a.name} · ${a.model}`,
+                actions: [
+                  h(
+                    "button",
+                    { class: "primary", onclick: () => launch(a, next) },
+                    `Lancer ${a.id}`,
+                  ),
+                ],
+              });
+            }
+          }
+        }
+
+        for (const i of state.issues.filter((x) => x.state === "OPEN")) {
+          if (i.labels.includes("bloquée")) {
+            items.push({
+              kind: "blocked",
+              tone: "bad",
+              icon: "lock",
+              title: `#${i.number} ${i.title}`,
+              sub: `Agent ${i.agent} s'est arrêté sans ouvrir de PR`,
+              actions: [
+                h(
+                  "button",
+                  { onclick: () => window.open(issueUrl(i.number), "_blank", "noopener") },
+                  "Voir l'issue",
                 ),
                 h(
                   "button",
                   {
-                    class: "danger",
-                    disabled: !running,
-                    onclick: () =>
-                      confirm(`Arrêter l'agent ${a.id} ?`) && act("stop", { agent: a.id }),
+                    class: "primary",
+                    onclick: () => act("unblock", { number: i.number }, "Tâche débloquée"),
                   },
-                  "Arrêter",
+                  "Débloquer",
                 ),
+              ],
+            });
+          } else if (i.labels.includes("humain")) {
+            items.push({
+              kind: "blocked",
+              tone: "bad",
+              icon: "user",
+              title: `#${i.number} ${i.title}`,
+              sub: "Tâche réservée à toi",
+              actions: [
+                h(
+                  "button",
+                  {
+                    class: "primary",
+                    onclick: () => window.open(issueUrl(i.number), "_blank", "noopener"),
+                  },
+                  "Voir l'issue",
+                ),
+              ],
+            });
+          }
+        }
+
+        for (const e of recentErrors()) {
+          items.push({
+            kind: "error",
+            tone: "bad",
+            icon: "alert",
+            title: "Erreur de l'orchestrateur",
+            sub: e.text,
+            actions: [
+              h(
+                "button",
+                {
+                  onclick: () => {
+                    dismissError(e);
+                    render(true);
+                  },
+                },
+                "Masquer",
+              ),
+            ],
+          });
+        }
+        return items.sort((a, b) => weight[a.kind] - weight[b.kind]);
+      }
+
+      function recentErrors() {
+        let dismissed = [];
+        try {
+          dismissed = JSON.parse(localStorage.getItem("dismissedErrors") ?? "[]");
+        } catch {}
+        return state.events
+          .filter(
+            (e) =>
+              e.level === "error" &&
+              Date.now() - new Date(e.at) < 30 * 60_000 &&
+              !dismissed.includes(e.at),
+          )
+          .slice(0, 3);
+      }
+      function dismissError(e) {
+        try {
+          const list = JSON.parse(localStorage.getItem("dismissedErrors") ?? "[]");
+          list.push(e.at);
+          localStorage.setItem("dismissedErrors", JSON.stringify(list.slice(-50)));
+        } catch {}
+      }
+
+      function renderInbox() {
+        const items = inboxItems();
+        $("inbox-count").textContent = items.length ? `· ${items.length}` : "";
+        $("inbox").replaceChildren(
+          ...(items.length
+            ? items.map((it) =>
+                h(
+                  "div",
+                  { class: "item" },
+                  h("span", { class: `ico tone-${it.tone}` }, icon(it.icon)),
+                  h(
+                    "div",
+                    { class: "body" },
+                    h("div", { class: "title" }, it.title),
+                    h("div", { class: "small muted" }, it.sub),
+                  ),
+                  h("div", { class: "actions" }, it.actions.filter(Boolean)),
+                ),
+              )
+            : [
+                h(
+                  "div",
+                  { class: "empty" },
+                  anyRunning()
+                    ? "Rien à faire pour l'instant : les agents travaillent."
+                    : "Rien à faire. Aucune tâche prête.",
+                ),
+              ]),
+        );
+      }
+      const anyRunning = () => state.agents.some((a) => a.run) || state.reviewing !== undefined;
+
+      // ---- Agents -----------------------------------------------------------------------
+      function agentStatus(a) {
+        if (a.run?.manual) return { label: "attend le collage", tone: "accent" };
+        if (a.run)
+          return {
+            label: `${a.run.kind === "fix" ? "corrige" : "travaille"} · ${duration(a.run.startedAt)}`,
+            tone: "warn",
+          };
+        const reviewed = state.prs.find((p) => p.agent === a.id && p.number === state.reviewing);
+        if (reviewed) return { label: "en relecture", tone: "accent" };
+        return { label: "libre", tone: "ok" };
+      }
+
+      function renderAgents() {
+        $("agents").replaceChildren(
+          ...state.agents.map((a) => {
+            const st = agentStatus(a);
+            const next = a.queue.find((q) => q.ready);
+            const target = a.run ? (a.run.pr ?? a.run.issue) : undefined;
+            const task = a.run
+              ? `#${target} ${issueTitle(a.run.issue)}`
+              : next
+                ? `Prochaine : #${next.number} ${next.title}`
+                : "Aucune tâche prête";
+            const last = a.lines.at(-1);
+            return h(
+              "button",
+              {
+                class: "agent",
+                onclick: () => showAgent(a),
+                "aria-label": `Agent ${a.id}, ${st.label}. Ouvrir le détail`,
+              },
+              h(
+                "div",
+                { class: "row", style: "flex-wrap:nowrap" },
+                avatar(a.id),
+                h(
+                  "div",
+                  { style: "min-width:0" },
+                  h("div", { style: "font-weight:600" }, a.name),
+                  h("div", { class: "tiny faint" }, a.model),
+                ),
+                h("span", { class: `pill tone-${st.tone}`, style: "margin-left:auto" }, st.label),
               ),
               h(
-                "pre",
-                { class: "log", "aria-label": `Log de l'agent ${a.id}` },
-                a.lines.length ? a.lines.join("\n") : "—",
+                "div",
+                {
+                  class: `small ${a.run ? "" : "muted"}`,
+                  style: "overflow:hidden;text-overflow:ellipsis;white-space:nowrap",
+                },
+                task,
               ),
-              h(
-                "details",
-                { "data-key": a.id },
-                h("summary", {}, `File (${a.queue.length})`),
-                a.queue.length
-                  ? h(
-                      "ul",
-                      { class: "list" },
-                      a.queue.map((q) =>
-                        h(
-                          "li",
-                          {},
-                          issueLink(q.number),
-                          q.title,
-                          q.ready
-                            ? h("span", { class: "chip ok" }, "prête")
-                            : h(
-                                "span",
-                                { class: "chip" },
-                                `attend ${q.waitingFor.map((n) => "#" + n).join(", ")}`,
-                              ),
-                        ),
-                      ),
-                    )
-                  : h("p", { class: "empty" }, "File vide"),
-              ),
+              last ? h("div", { class: "logline" }, last) : null,
             );
           }),
         );
       }
 
-      function renderPrs() {
-        if (!state.prs.length) {
-          $("prs").replaceChildren(h("p", { class: "empty" }, "Aucune PR ouverte"));
-          return;
-        }
-        const reviewerSelect = (pr) =>
-          h(
-            "select",
-            { "aria-label": `Relecteur pour la PR ${pr.number}` },
-            state.reviewers.map((r) =>
-              h(
-                "option",
-                { value: r.id, selected: r.id === state.defaultReviewer },
-                `${r.id}${r.verified ? "" : " (non vérifié)"}`,
-              ),
-            ),
-          );
-        $("prs").replaceChildren(
-          h(
-            "table",
-            {},
+      function showAgent(a) {
+        const fresh = agentById(a.id) ?? a;
+        const next = fresh.queue.find((q) => q.ready);
+        const actions = [];
+        if (fresh.run && !fresh.run.manual)
+          actions.push({
+            label: "Arrêter l'agent",
+            danger: true,
+            run: () => act("stop", { agent: fresh.id }, `Agent ${fresh.id} arrêté`),
+          });
+        if (!fresh.run && next)
+          actions.push({
+            label: `Lancer sur #${next.number}`,
+            primary: true,
+            run: () => launch(fresh, next),
+          });
+        openDialog({
+          title: `${fresh.id} · ${fresh.name}`,
+          body: [
             h(
-              "thead",
-              {},
-              h(
-                "tr",
-                {},
-                ["PR", "Agent", "Relecture", "Actions"].map((t) => h("th", { scope: "col" }, t)),
-              ),
+              "div",
+              { class: "small muted" },
+              `${fresh.tool ?? fresh.cli} · ${fresh.model} · ${agentStatus(fresh).label}`,
             ),
-            h(
-              "tbody",
-              {},
-              state.prs.map((pr) => {
-                const select = reviewerSelect(pr);
-                const r = pr.review;
-                const contract = r?.outcome === "human";
-                return h(
-                  "tr",
+            fresh.run?.manual
+              ? h(
+                  "div",
                   {},
-                  h(
-                    "td",
-                    {},
-                    h("a", { href: pr.url, target: "_blank", rel: "noopener" }, `#${pr.number}`),
-                    " ",
-                    pr.title,
-                    h(
-                      "div",
-                      { class: "row" },
-                      pr.labels.map((l) => h("span", { class: "chip" }, l)),
-                    ),
-                  ),
-                  h("td", {}, pr.agent ?? "—"),
-                  h(
-                    "td",
-                    {},
-                    outcomeChip(r?.outcome),
-                    r
-                      ? h(
-                          "div",
-                          { class: "meta" },
-                          `${r.reviewer} · ${time(r.at)} · corrections : ${r.fixRounds}`,
-                        )
-                      : null,
-                    r
-                      ? h(
-                          "ul",
-                          { class: "list" },
-                          [...r.reasons, ...r.reviewerComments].map((t) => h("li", {}, t)),
-                        )
-                      : null,
-                  ),
-                  h(
-                    "td",
-                    {},
-                    h(
-                      "div",
-                      { class: "row" },
-                      select,
-                      h(
-                        "button",
-                        {
-                          disabled: Boolean(state.activity),
-                          onclick: () =>
-                            act("review", { number: pr.number, reviewer: select.value }),
-                        },
-                        "Relire",
-                      ),
-                      h(
-                        "button",
-                        {
-                          disabled: !pr.agent,
-                          onclick: () => {
-                            const note = prompt("Note pour l'agent (facultatif) :", "");
-                            if (note !== null) act("sendback", { number: pr.number, note });
-                          },
-                        },
-                        "Renvoyer à l'agent",
-                      ),
-                      h(
-                        "button",
-                        {
-                          class: "primary",
-                          onclick: () => {
-                            const warning = contract
-                              ? "\n\nATTENTION : cette PR touche un contrat ou n'a pas de verdict clair. Lis le diff sur GitHub avant."
-                              : "";
-                            if (confirm(`Merger la PR #${pr.number} dans main ?${warning}`))
-                              act("merge", { number: pr.number });
-                          },
-                        },
-                        "Merger",
-                      ),
-                    ),
-                  ),
-                );
-              }),
+                  h("div", { class: "small muted" }, "Prompt à coller :"),
+                  h("pre", { class: "log" }, fresh.run.prompt),
+                )
+              : null,
+            h(
+              "pre",
+              { class: "log", "aria-label": "Log de l'agent" },
+              fresh.lines.length ? fresh.lines.join("\n") : "Pas encore de log pour ce run.",
             ),
-          ),
+            h(
+              "div",
+              {},
+              h(
+                "div",
+                { class: "small muted", style: "margin-bottom:6px" },
+                `File d'attente (${fresh.queue.length})`,
+              ),
+              fresh.queue.length
+                ? h(
+                    "ul",
+                    { class: "plain" },
+                    fresh.queue.map((q) =>
+                      h(
+                        "li",
+                        { class: "small" },
+                        link(issueUrl(q.number), `#${q.number}`),
+                        ` ${q.title}`,
+                        q.ready
+                          ? h("span", { class: "pill tone-ok", style: "margin-left:6px" }, "prête")
+                          : h(
+                              "span",
+                              { class: "faint" },
+                              ` · attend ${q.waitingFor.map((n) => "#" + n).join(", ")}`,
+                            ),
+                      ),
+                    ),
+                  )
+                : h("div", { class: "small faint" }, "Vide"),
+            ),
+          ].filter(Boolean),
+          actions,
+        });
+      }
+
+      // ---- Progress board -------------------------------------------------------------------
+      function renderBoard() {
+        const cols = { todo: [], doing: [], review: [], validate: [], done: [] };
+        const prByIssue = new Map(state.prs.filter((p) => p.issue).map((p) => [p.issue, p]));
+        const queueInfo = new Map(state.agents.flatMap((a) => a.queue.map((q) => [q.number, q])));
+        const runningOn = (n, pr) =>
+          state.agents.some((a) => a.run && (a.run.issue === n || (pr && a.run.pr === pr.number)));
+
+        for (const i of state.issues) {
+          if (i.state === "CLOSED") {
+            cols.done.push({ i });
+            continue;
+          }
+          const pr = prByIssue.get(i.number);
+          if (runningOn(i.number, pr) || i.labels.includes("en-cours")) cols.doing.push({ i, pr });
+          else if (pr)
+            (pr.review && state.reviewing !== pr.number ? cols.validate : cols.review).push({
+              i,
+              pr,
+            });
+          else cols.todo.push({ i, q: queueInfo.get(i.number) });
+        }
+        for (const pr of state.prs.filter((p) => !p.issue)) {
+          (pr.review && state.reviewing !== pr.number ? cols.validate : cols.review).push({ pr });
+        }
+        cols.done.sort((a, b) => b.i.number - a.i.number);
+
+        const outcomeChip = {
+          ready: ["ok", "prête"],
+          changes: ["warn", "à corriger"],
+          human: ["warn", "à vérifier"],
+          error: ["bad", "erreur"],
+        };
+        const card = ({ i, pr, q }) => {
+          const number = i?.number ?? pr.number;
+          const title = i?.title ?? pr.title;
+          const agent = i?.agent ?? pr?.agent;
+          const waiting = q && !q.ready;
+          const reviewingNow = pr !== undefined && state.reviewing === pr.number;
+          const chip = reviewingNow
+            ? ["accent", "relecture…"]
+            : pr?.review
+              ? outcomeChip[pr.review.outcome]
+              : null;
+          return h(
+            "a",
+            {
+              class: `card${waiting ? " waiting" : ""}`,
+              href: pr ? pr.url : issueUrl(number),
+              target: "_blank",
+              rel: "noopener",
+              style: "text-decoration:none;color:inherit",
+            },
+            h(
+              "div",
+              { class: "top" },
+              agent ? avatar(agent, true) : null,
+              h("span", { class: "num" }, `#${number}`),
+              chip
+                ? h("span", { class: `pill tone-${chip[0]}`, style: "margin-left:auto" }, chip[1])
+                : null,
+            ),
+            h("div", { class: "ttl" }, title),
+            waiting
+              ? h(
+                  "div",
+                  { class: "tiny faint" },
+                  `attend ${q.waitingFor.map((n) => "#" + n).join(", ")}`,
+                )
+              : null,
+          );
+        };
+        const column = (label, list, limit) =>
+          h(
+            "div",
+            { class: "col" },
+            h("h3", {}, h("span", {}, label), h("span", { class: "count" }, String(list.length))),
+            ...(list.length
+              ? list.slice(0, limit ?? list.length).map(card)
+              : [h("div", { class: "tiny faint" }, "—")]),
+            limit && list.length > limit
+              ? h("div", { class: "tiny faint" }, `et ${list.length - limit} de plus`)
+              : null,
+          );
+        $("board").replaceChildren(
+          column("À faire", cols.todo),
+          column("En cours", cols.doing),
+          column("Relecture", cols.review),
+          column("À valider", cols.validate),
+          column("Fait", cols.done, 6),
         );
       }
 
-      function renderRest() {
-        $("review").textContent = state.reviewLines.length ? state.reviewLines.join("\n") : "—";
-        $("attention").replaceChildren(
-          state.attention.length
-            ? h(
+      // ---- Header and journal ---------------------------------------------------------------
+      function renderHeader() {
+        $("repo").textContent = state.repo;
+        $("repo").href = `https://github.com/${state.repo}`;
+        $("dot").className = `dot ${connected ? "on" : "off"}`;
+        $("fresh").textContent = connected
+          ? `GitHub à jour ${ago(state.lastRefresh)}${state.activity ? ` · ${state.activity}` : ""}`
+          : "orchestrateur hors ligne";
+        const errors = recentErrors().length;
+        $("errors").hidden = errors === 0;
+        $("errors").textContent = String(errors);
+      }
+
+      function showJournal() {
+        openDialog({
+          title: "Journal",
+          body: [
+            state.reviewLines.length
+              ? h(
+                  "div",
+                  {},
+                  h(
+                    "div",
+                    { class: "small muted", style: "margin-bottom:6px" },
+                    "Dernière relecture",
+                  ),
+                  h("pre", { class: "log" }, state.reviewLines.join("\n")),
+                )
+              : null,
+            h(
+              "div",
+              {},
+              h("div", { class: "small muted", style: "margin-bottom:6px" }, "Événements"),
+              h(
                 "ul",
-                { class: "list card" },
-                state.attention.map((i) =>
+                { class: "plain" },
+                state.events.map((e) =>
                   h(
                     "li",
-                    {},
-                    issueLink(i.number),
-                    i.title,
-                    i.labels.map((l) => h("span", { class: "chip bad" }, l)),
-                    i.labels.includes("bloquée")
-                      ? h(
-                          "button",
-                          { onclick: () => act("unblock", { number: i.number }) },
-                          "Débloquer",
-                        )
-                      : null,
+                    { class: "small" },
+                    h(
+                      "span",
+                      {
+                        class: `pill tone-${e.level === "error" ? "bad" : e.level === "warn" ? "warn" : "gray"}`,
+                      },
+                      e.level,
+                    ),
+                    " ",
+                    h("span", { class: "faint" }, ago(e.at)),
+                    " ",
+                    e.text,
                   ),
                 ),
-              )
-            : h("p", { class: "empty" }, "Rien à traiter"),
-        );
-        $("runs").replaceChildren(
-          ...(state.runs.length
-            ? state.runs.map((r) =>
-                h(
-                  "li",
-                  {},
-                  h("span", { class: "meta" }, time(r.startedAt)),
-                  h("strong", {}, r.agent),
-                  r.kind,
-                  issueLink(r.pr ?? r.issue),
-                  r.endedAt
-                    ? h(
-                        "span",
-                        { class: r.result?.startsWith("PR") ? "chip ok" : "chip bad" },
-                        r.result ?? `code ${r.exitCode}`,
-                      )
-                    : h("span", { class: "chip warn" }, "en cours"),
-                ),
-              )
-            : [h("li", { class: "empty" }, "Aucun lancement")]),
-        );
-        $("events").replaceChildren(
-          ...(state.events.length
-            ? state.events.map((e) =>
-                h(
-                  "li",
-                  {},
-                  h("span", { class: "meta" }, time(e.at)),
-                  h(
-                    "span",
-                    {
-                      class:
-                        e.level === "error"
-                          ? "chip bad"
-                          : e.level === "warn"
-                            ? "chip warn"
-                            : "chip",
-                    },
-                    e.level,
-                  ),
-                  e.text,
-                ),
-              )
-            : [h("li", { class: "empty" }, "Journal vide")]),
-        );
-        $("meta").textContent =
-          `${state.repo} · GitHub actualisé à ${state.lastRefresh ? time(state.lastRefresh) : "—"}${state.activity ? ` · ${state.activity}` : ""}`;
+              ),
+            ),
+          ].filter(Boolean),
+        });
       }
 
-      // Re-render a block only when its data changed, so open menus and selects are not reset.
+      // Re-render a block only when its data changed, so hover and focus survive live updates.
       const last = {};
       function changed(key, value) {
         const s = JSON.stringify(value);
@@ -659,36 +1332,55 @@
         last[key] = s;
         return true;
       }
-      function render() {
+      function render(force = false) {
         if (!state) return;
-        const open = new Set(
-          [...document.querySelectorAll("#agents details[open]")].map((d) => d.dataset.key),
-        );
-        if (changed("agents", [state.agents, Math.floor(Date.now() / 15000)])) renderAgents();
-        open.forEach((k) =>
-          document.querySelector(`#agents details[data-key="${k}"]`)?.setAttribute("open", ""),
-        );
-        if (changed("prs", [state.prs, state.reviewers, state.activity])) renderPrs();
-        renderRest();
+        const tick = Math.floor(Date.now() / 10000);
+        renderHeader();
+        if (
+          force ||
+          changed("inbox", [
+            state.prs,
+            state.agents.map((a) => [a.id, a.run?.id, a.queue]),
+            state.issues,
+            state.reviewing,
+            state.events.slice(0, 5),
+          ])
+        )
+          renderInbox();
+        if (force || changed("agents", [state.agents, state.reviewing, tick])) renderAgents();
+        if (
+          force ||
+          changed("board", [
+            state.issues,
+            state.prs,
+            state.agents.map((a) => a.run?.id),
+            state.reviewing,
+          ])
+        )
+          renderBoard();
       }
 
       function connect() {
         const source = new EventSource("/api/events");
         source.onopen = () => {
-          $("conn").textContent = "connecté";
-          $("conn").className = "chip ok";
+          connected = true;
+          render();
         };
         source.onmessage = (e) => {
           state = JSON.parse(e.data);
+          connected = true;
           render();
         };
         source.onerror = () => {
-          $("conn").textContent = "hors ligne";
-          $("conn").className = "chip bad";
+          connected = false;
+          if (state) renderHeader();
         };
       }
-      $("refresh").addEventListener("click", () => act("refresh"));
-      setInterval(render, 15000);
+
+      $("refresh").append(icon("refresh"));
+      $("refresh").addEventListener("click", () => act("refresh", {}, "Actualisé"));
+      $("journal").addEventListener("click", () => state && showJournal());
+      setInterval(() => render(), 5000);
       connect();
     </script>
   </body>

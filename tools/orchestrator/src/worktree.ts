@@ -21,6 +21,8 @@ export async function prepareWorktree(
   dir: string,
   ref: { detach: string } | { branch: string },
 ): Promise<void> {
+  // Without this check a missing folder surfaces as a misleading « spawn git ENOENT ».
+  if (!existsSync(dir)) throw new Error(`Worktree introuvable : ${dir}`);
   const before = lockHash(dir);
   await git(dir, ["fetch", "--prune", "origin"]);
   await git(dir, ["reset", "--hard"]);

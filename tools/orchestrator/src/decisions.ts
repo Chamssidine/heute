@@ -106,3 +106,14 @@ export function decideReview(input: ReviewInput): ReviewDecision {
   }
   return { outcome: "ready", reasons: ["Toutes les vérifications passent : prête à merger"] };
 }
+
+// A manual run (IDE agent) is over when its PR exists (task) or when the PR received
+// a new commit since the correction was requested (fix).
+export function isManualRunDone(
+  run: { kind: "task" | "fix"; branch: string; startSha?: string },
+  prs: readonly { headRefName: string; headRefOid: string }[],
+): boolean {
+  const pr = prs.find((p) => p.headRefName === run.branch);
+  if (!pr) return false;
+  return run.kind === "task" || pr.headRefOid !== run.startSha;
+}

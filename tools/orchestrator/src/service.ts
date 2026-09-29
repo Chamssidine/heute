@@ -3,7 +3,7 @@
 import { join } from "node:path";
 import { adapterFor } from "./adapters/index.ts";
 import { agentOfBranch, type Config } from "./config.ts";
-import { nextIssue, queueFor, STATUS_LABELS } from "./decisions.ts";
+import { isManualRunDone, nextIssue, queueFor, STATUS_LABELS } from "./decisions.ts";
 import type { GitHub, PullRequest } from "./github.ts";
 import { fixPrompt, taskPrompt } from "./prompts.ts";
 import { reviewComment, reviewPullRequest } from "./review.ts";
@@ -12,13 +12,20 @@ import type { RunKind, RunRecord, Store } from "./store.ts";
 import { ensureWorktree, prepareWorktree } from "./worktree.ts";
 
 const ALL_STATUS = Object.values(STATUS_LABELS);
+const TOOL_NAMES: Record<string, string> = {
+  claude: "Claude Code",
+  antigravity: "Antigravity CLI",
+  gemini: "Gemini CLI",
+  codex: "Codex",
+};
 
 export class Orchestrator {
   private readonly config: Config;
   private readonly github: GitHub;
   private readonly store: Store;
   private readonly repoDir: string;
-  private readonly running = new Map<string, { run: RunRecord; handle: RunHandle }>();
+  // `handle` is absent for manual runs: nothing runs on this machine.
+  private readonly running = new Map<string, { run: RunRecord; handle?: RunHandle }>();
   private reviewing: number | undefined;
 
   constructor(config: Config, github: GitHub, store: Store, repoDir: string) {
@@ -26,6 +33,16 @@ export class Orchestrator {
     this.github = github;
     this.store = store;
     this.repoDir = repoDir;
+    // After a restart, manual runs are still waiting for the IDE agent; process runs are lost.
+    for (const run of store.data.runs.filter((r) => !r.endedAt)) {
+      if (run.manual) {
+        this.running.set(run.agent, { run });
+      } else {
+        run.endedAt = new Date().toISOString();
+        run.result = "interrompu (orchestrateur redémarré)";
+      }
+    }
+    store.save();
   }
 
   async refresh(): Promise<void> {
@@ -34,6 +51,7 @@ export class Orchestrator {
     this.store.live.prs = prs;
     this.store.live.lastTick = new Date().toISOString();
     this.store.emit("change");
+    this.detectFinishedManualRuns();
   }
 
   // ---- Human actions ------------------------------------------------------------------
@@ -73,6 +91,7 @@ export class Orchestrator {
         .map((l) => `- ${l}`)
         .join("\n") || "- Relire la PR et corriger les défauts signalés en commentaire.";
     const issue = this.issueOfBranch(pr.headRefName);
+    await ensureWorktree(this.repoDir, agent.worktree);
     await prepareWorktree(agent.worktree, { branch: pr.headRefName });
     await this.github.setLabels(prNumber, [STATUS_LABELS.running], this.labelsOn(pr));
     this.start(
@@ -82,6 +101,32 @@ export class Orchestrator {
       prNumber,
       pr.headRefName,
       fixPrompt(agentId, agent, issue ?? 0, prNumber, pr.headRefName, feedback),
+      pr.headRefOid,
+    );
+  }
+
+  // Manual runs: the human says the IDE agent is done (useful when it stopped without a PR).
+  async markDone(agentId: string): Promise<void> {
+    const current = this.running.get(agentId);
+    if (!current?.run.manual)
+      throw new Error(`L'agent ${agentId} n'a pas de tâche manuelle en cours`);
+    await this.refresh();
+    const still = this.running.get(agentId);
+    if (still) {
+      this.running.delete(agentId);
+      await this.finish(still.run, 0);
+    }
+  }
+
+  // Called from the dashboard: errors that can be known up front go back to the click,
+  // the review itself then runs in the background.
+  startReview(prNumber: number, reviewerId: string): void {
+    if (this.reviewing !== undefined)
+      throw new Error(`Relecture de la PR #${this.reviewing} en cours`);
+    this.requirePr(prNumber);
+    if (!this.config.reviewers[reviewerId]) throw new Error(`Relecteur inconnu : ${reviewerId}`);
+    this.review(prNumber, reviewerId).catch((error: Error) =>
+      this.store.log("error", `Relecture PR #${prNumber} : ${error.message}`),
     );
   }
 
@@ -89,20 +134,25 @@ export class Orchestrator {
     if (this.reviewing !== undefined)
       throw new Error(`Relecture de la PR #${this.reviewing} en cours`);
     const pr = this.requirePr(prNumber);
-    const agentId = this.requireAgentOf(pr);
+    // PRs opened outside an agent branch (orchestrator, human) are reviewed without a perimeter.
+    const agentId = agentOfBranch(this.config, pr.headRefName);
     const previous = this.store.data.reviews[String(prNumber)];
     const fixRounds = previous?.fixRounds ?? 0;
     this.reviewing = prNumber;
     this.store.setActivity(`Relecture de la PR #${prNumber}`);
     try {
+      await ensureWorktree(this.repoDir, this.config.reviewWorktree);
       await this.github.setLabels(prNumber, [STATUS_LABELS.review], this.labelsOn(pr));
+      const issue = this.issueOfBranch(pr.headRefName);
       const result = await reviewPullRequest({
         config: this.config,
         agentId,
         reviewerId,
         pr,
         files: await this.github.pullRequestFiles(prNumber),
-        issue: this.issueOfBranch(pr.headRefName),
+        issue,
+        diff: await this.github.pullRequestDiff(prNumber),
+        issueText: issue === undefined ? undefined : await this.github.issueText(issue),
         fixRoundsDone: fixRounds,
         logsDir: this.store.logsDir,
         onLine: (l) => this.store.pushLine("review", l),
@@ -140,11 +190,22 @@ export class Orchestrator {
     await this.refresh();
   }
 
-  stop(agentId: string): void {
+  async stop(agentId: string): Promise<void> {
     const current = this.running.get(agentId);
     if (!current) throw new Error(`L'agent ${agentId} ne travaille pas`);
-    current.handle.stop();
-    this.store.log("warn", `Agent ${agentId} arrêté par l'humain`);
+    if (current.handle) {
+      current.handle.stop();
+      this.store.log("warn", `Agent ${agentId} arrêté par l'humain`);
+      return;
+    }
+    // Manual run: nothing to kill, just release the task.
+    const { run } = current;
+    this.running.delete(agentId);
+    run.endedAt = new Date().toISOString();
+    run.result = "annulé";
+    await this.github.setLabels(run.pr ?? run.issue, [], [STATUS_LABELS.running]);
+    this.store.log("warn", `Tâche manuelle de l'agent ${agentId} annulée par l'humain`);
+    await this.refresh();
   }
 
   async unblock(issueNumber: number): Promise<void> {
@@ -161,6 +222,7 @@ export class Orchestrator {
     pr: number | undefined,
     branch: string,
     prompt: string,
+    startSha?: string,
   ): void {
     const agent = this.requireAgent(agentId);
     const settings = this.config.clis[agent.cli];
@@ -178,6 +240,22 @@ export class Orchestrator {
       logFile: join(this.store.logsDir, `${id}.log`),
     };
     this.store.live.liveLines[agentId] = [];
+
+    if (adapter.mode === "manual") {
+      Object.assign(run, { manual: true, prompt, worktree: agent.worktree, startSha });
+      this.running.set(agentId, { run });
+      this.store.data.runs.push(run);
+      this.store.pushLine(
+        agentId,
+        `En attente : ouvre ${agent.worktree} dans ${settings.command}, colle le prompt, lance l'agent.`,
+      );
+      this.store.log(
+        "info",
+        `Tâche préparée pour l'agent ${agentId} (${kind}, #${pr ?? issue}) : prompt à coller dans ${settings.command}`,
+      );
+      return;
+    }
+
     const handle = startRun(
       adapter,
       adapter.launch(settings, agent.model, "agent", prompt),
@@ -228,6 +306,15 @@ export class Orchestrator {
     }
   }
 
+  private detectFinishedManualRuns(): void {
+    for (const { run, handle } of [...this.running.values()]) {
+      if (handle || !isManualRunDone(run, this.store.live.prs)) continue;
+      // Removed before finishing so that a concurrent refresh cannot finish it twice.
+      this.running.delete(run.agent);
+      void this.finish(run, 0);
+    }
+  }
+
   private labelsOn(pr: PullRequest): string[] {
     return pr.labels.filter((l) => (ALL_STATUS as string[]).includes(l));
   }
@@ -261,12 +348,17 @@ export class Orchestrator {
     const { live, data } = this.store;
     const agents = Object.entries(this.config.agents).map(([id, a]) => {
       const current = this.running.get(id);
+      const settings = this.config.clis[a.cli];
+      const adapter = adapterFor(settings?.adapter ?? "");
       return {
         id,
         name: a.name,
         cli: a.cli,
+        // Manual adapters store the IDE name in `command`; process adapters store a path.
+        tool: adapter.mode === "manual" ? settings?.command : (TOOL_NAMES[adapter.id] ?? a.cli),
+        manual: adapter.mode === "manual",
         model: a.model,
-        verified: adapterFor(this.config.clis[a.cli]?.adapter ?? "").verified,
+        verified: adapter.verified,
         run: current?.run,
         lines: live.liveLines[id] ?? [],
         queue: queueFor(a.label, live.issues).map((q) => ({
@@ -277,10 +369,19 @@ export class Orchestrator {
         })),
       };
     });
+    const agentLabels = new Map(Object.entries(this.config.agents).map(([id, a]) => [a.label, id]));
     return {
       repo: this.config.repo,
       lastRefresh: live.lastTick,
       activity: live.activity,
+      reviewing: this.reviewing,
+      // Agent issues only, without their body: enough for the progress board.
+      issues: live.issues.flatMap((i) => {
+        const agent = i.labels.map((l) => agentLabels.get(l)).find(Boolean);
+        return agent
+          ? [{ number: i.number, title: i.title, state: i.state, labels: i.labels, agent }]
+          : [];
+      }),
       reviewers: Object.entries(this.config.reviewers).map(([id, r]) => ({
         id,
         model: r.model,
@@ -292,6 +393,7 @@ export class Orchestrator {
       prs: live.prs.map((p) => ({
         ...p,
         agent: agentOfBranch(this.config, p.headRefName),
+        issue: this.issueOfBranch(p.headRefName),
         review: data.reviews[String(p.number)],
       })),
       attention: live.issues
@@ -301,7 +403,10 @@ export class Orchestrator {
             i.labels.some((l) => l === STATUS_LABELS.blocked || l === STATUS_LABELS.humanTask),
         )
         .map((i) => ({ number: i.number, title: i.title, labels: i.labels })),
-      runs: data.runs.slice(-15).reverse(),
+      runs: data.runs
+        .slice(-15)
+        .reverse()
+        .map((r) => ({ ...r, prompt: undefined })),
       events: data.events.slice(-40).reverse(),
     };
   }

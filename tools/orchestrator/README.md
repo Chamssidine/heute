@@ -29,6 +29,57 @@ Puis ouvrir http://127.0.0.1:4000. Le serveur n'écoute que sur la machine local
    - ou **Renvoyer à l'agent**, avec une note si besoin ;
    - ou **Relire** avec un autre relecteur (Claude ou Codex).
 
+## Antigravity CLI (`agy`) : agents L et U
+
+L et U tournent avec la CLI d'Antigravity (`agy -p`), lancée par l'outil comme Claude. Aucun copier-coller.
+
+- **Fichiers :** l'agent les modifie grâce à `--mode accept-edits`.
+- **Commandes shell (git, npm, gh) :** en mode non interactif, agy ne peut pas demander la permission. Il refuse donc toute commande qui ne correspond pas à une règle `permissions.allow` de `%USERPROFILE%\.gemini\antigravity-cli\settings.json`. Les commandes refusées apparaissent dans le log de l'agent (« refusé : command »).
+- **Relecteur `gemini` :** il tourne en `--mode plan`, en lecture seule.
+
+Ne pas utiliser `--dangerously-skip-permissions`, qui autorise tout.
+
+**Syntaxe des règles d'agy**, vérifiée en réel (agy 1.0.12) :
+
+- `command(npm run test)` compare **mot par mot le début** de la commande. Dans une chaîne `;` / `&&` / `|`, chaque morceau est vérifié séparément.
+- Pour `git`, `gh` et `npx`, agy exige la ligne entière : il faut donc une règle `command(regex:…)`, appliquée à toute la ligne. Nos règles excluent `; & | < > $` et l'accent grave, pour qu'une commande autorisée ne puisse pas en cacher une autre.
+- Priorité : `deny` > `ask` > `allow`.
+
+Règles en place (à reproduire sur une autre machine) :
+
+```json
+"allow": [
+  "command(npm run typecheck)", "command(npm run lint)", "command(npm run test)",
+  "command(npm run format)", "command(npm test)", "command(npm install)", "command(npm ci)",
+  "command(regex:git (status|diff|log|show|add|commit|switch|checkout|fetch|pull|push|restore|rev-parse|branch|stash)( [^;&|<>$`]*)?)",
+  "command(regex:gh (issue (view|comment)|pr (create|view|diff|comment|list))( [^;&|<>$`]*)?)",
+  "command(regex:npx (prettier|eslint|tsc|expo)( [^;&|<>$`]*)?)"
+],
+"deny": [
+  "command(gh pr merge)", "command(gh api)", "command(gh repo)", "command(gh secret)",
+  "command(gh auth)", "command(gh workflow)", "command(gh release)",
+  "command(regex:gh (pr merge|api|repo|secret|auth|workflow|release).*)"
+]
+```
+
+Test effectué : `git status --short`, `git log -1 --oneline`, `npm run typecheck`, `gh issue view`, `npx prettier --check` → autorisées ; `git status; echo …`, `git log -1 && echo …`, `npm run typecheck; echo …`, `gh issue view …; echo …`, `echo …`, `gh pr merge` → refusées.
+
+## Agents dans un IDE sans CLI (mode manuel)
+
+Si un agent ne tourne que dans un IDE, il utilise l'adaptateur `manual` (CLI `antigravity-ide` dans `config.json`) : l'outil ne lance rien lui-même.
+
+1. **Préparer la tâche** : l'outil choisit l'issue, remet le worktree de l'agent sur `origin/main` et affiche le prompt.
+2. Ouvre ce worktree dans l'IDE (par exemple `C:\dev\heute-l` pour L), puis **Copier le prompt** et colle-le dans une nouvelle conversation d'agent.
+3. L'outil détecte la fin tout seul, à chaque actualisation (toutes les 60 s) :
+   - **tâche** : la PR apparaît sur la branche `<préfixe>/i<numéro>` ;
+   - **correction** : un nouveau commit arrive sur la PR.
+
+   Il lance alors la relecture automatique.
+
+4. **Terminé** : à utiliser si l'agent s'est arrêté sans PR (la tâche passe en `bloquée`). **Annuler** libère la tâche.
+
+Les tâches en attente survivent à un redémarrage de l'orchestrateur.
+
 ## Ajouter ou changer un LLM
 
 - **Changer le modèle ou la CLI d'un agent** : modifier `agents.<id>.cli` et `model` dans `config.json`.
@@ -40,21 +91,18 @@ Puis ouvrir http://127.0.0.1:4000. Le serveur n'écoute que sur la machine local
 - **Ajouter un relecteur** : entrée dans `reviewers`.
 - **Permissions propres à une CLI** : `clis.<nom>.extraArgs.agent` / `.reviewer`, sans toucher au code.
 
-| Adaptateur | État                                                                                  |
-| ---------- | ------------------------------------------------------------------------------------- |
-| `claude`   | Vérifié. Agents limités par `--allowedTools` : pas de `gh pr merge`, pas de `gh api`. |
-| `gemini`   | Non vérifié en réel. Voir la sécurité ci-dessous.                                     |
-| `codex`    | Écrit d'après la documentation de `codex exec`, CLI non installée ici : à tester.     |
+| Adaptateur    | État                                                                                                                |
+| ------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `claude`      | Vérifié. Agents limités par `--allowedTools` : pas de `gh pr merge`, pas de `gh api`.                               |
+| `antigravity` | Vérifié (agy 1.0.12). Fichiers en `accept-edits`, commandes limitées par les règles du settings.json d'Antigravity. |
+| `manual`      | Pour les agents d'IDE sans CLI : prompt à coller, fin détectée sur GitHub.                                          |
+| `gemini`      | Non utilisable ici : Google refuse Gemini CLI avec un compte gratuit individuel. Il faut une clé `GEMINI_API_KEY`.  |
+| `codex`       | Écrit d'après la documentation de `codex exec`, CLI non installée ici : à tester.                                   |
 
 ## Sécurité
 
-- **Gemini :** en mode non interactif, Gemini CLI ne sait pas demander de confirmation. `config.json` passe donc `--approval-mode yolo` : pendant un run, l'agent peut exécuter n'importe quelle commande dans son worktree. Garde-fous en place :
-  - lancement manuel ;
-  - bouton **Arrêter** et durée maximale (`runTimeoutMinutes`) ;
-  - protection de `main` : seule une PR y entre ;
-  - contrôle du périmètre à la relecture.
-
-  Pour limiter davantage, remplacer ce mode par une politique du Policy Engine de Gemini CLI.
+- **Gemini CLI**, si tu l'utilises un jour avec une clé API : en mode non interactif, il ne peut pas demander de confirmation, et il refuse de travailler dans un dossier non approuvé. Préfère une politique du Policy Engine plutôt que `--approval-mode yolo`, en l'ajoutant via `clis.gemini.extraArgs.agent`.
+- **Agents d'IDE :** leurs permissions sont celles que tu règles dans l'IDE. L'outil n'y a aucun accès.
 
 - **Aucun secret** n'est transmis aux agents par l'outil. Ils utilisent toutefois le `gh` connecté de la machine.
 - **API locale :** les actions exigent l'en-tête `x-orchestrator: 1` et une origine locale. Une page web externe ne peut donc pas déclencher d'action.

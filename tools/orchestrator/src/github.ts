@@ -6,6 +6,7 @@ export interface PullRequest {
   title: string;
   url: string;
   headRefName: string;
+  headRefOid: string;
   labels: string[];
 }
 
@@ -57,7 +58,7 @@ export class GitHub {
       "--limit",
       "100",
       "--json",
-      "number,title,url,headRefName,labels",
+      "number,title,url,headRefName,headRefOid,labels",
     ]);
     const raw = JSON.parse(out) as (Omit<PullRequest, "labels"> & RawLabelled)[];
     return raw.map((p) => ({ ...p, labels: p.labels.map((l) => l.name) }));
@@ -66,6 +67,16 @@ export class GitHub {
   async pullRequestFiles(pr: number): Promise<string[]> {
     const out = await this.run(["pr", "view", String(pr), "--json", "files"]);
     return (JSON.parse(out) as { files: { path: string }[] }).files.map((f) => f.path);
+  }
+
+  async pullRequestDiff(pr: number): Promise<string> {
+    return this.run(["pr", "diff", String(pr)]);
+  }
+
+  async issueText(issue: number): Promise<string> {
+    const out = await this.run(["issue", "view", String(issue), "--json", "title,body"]);
+    const { title, body } = JSON.parse(out) as { title: string; body: string };
+    return `# #${issue} ${title}\n\n${body}\n`;
   }
 
   async findPullRequest(branch: string): Promise<PullRequest | undefined> {

@@ -13,7 +13,7 @@ export interface CliSettings {
 export interface LaunchSpec {
   command: string;
   args: string[];
-  // The prompt is always sent on stdin: no quoting issues on Windows.
+  // Sent on stdin when the CLI reads it there (no quoting issues); empty when the adapter passes the prompt as an argument.
   stdinPrompt: string;
 }
 
@@ -21,6 +21,10 @@ export interface CliAdapter {
   readonly id: string;
   // True once the adapter has been tried against the real CLI on this machine.
   readonly verified: boolean;
+  // "process": the orchestrator starts the CLI itself.
+  // "manual": the human pastes the prompt into an IDE agent (e.g. Antigravity);
+  // the end of the run is detected from GitHub.
+  readonly mode: "process" | "manual";
   launch(settings: CliSettings, model: string, role: Role, prompt: string): LaunchSpec;
   // One output line → one short readable line for the live log (or nothing).
   summarize(line: string): string | undefined;

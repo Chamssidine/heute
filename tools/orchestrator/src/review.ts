@@ -1,4 +1,5 @@
 // Automatic review is read-only: it validates and comments, it never merges.
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { adapterFor } from "./adapters/index.ts";
 import type { Config } from "./config.ts";
@@ -15,17 +16,23 @@ export interface ReviewResult extends ReviewDecision {
 
 export interface ReviewRequest {
   config: Config;
-  agentId: string;
+  // Undefined for a PR that does not come from an agent: no perimeter check then.
+  agentId: string | undefined;
   reviewerId: string;
   pr: { number: number; headRefName: string };
   files: string[];
   issue: number | undefined;
+  // Given to the reviewer as files: it then needs no shell command at all
+  // (some CLIs, like agy, stop the whole run at the first refused command).
+  diff: string;
+  issueText: string | undefined;
   fixRoundsDone: number;
   logsDir: string;
   onLine: (line: string) => void;
 }
 
 const MAX_FIX_ROUNDS = 2;
+const REVIEW_INPUT_DIR = ".orchestrator-review";
 
 async function runValidations(dir: string): Promise<{ ok: boolean; log: string }> {
   let log = "";
@@ -61,7 +68,7 @@ export async function reviewPullRequest(req: ReviewRequest): Promise<ReviewResul
   const { config } = req;
   const base = {
     files: req.files,
-    allowedPaths: config.agents[req.agentId]?.allowedPaths ?? [],
+    allowedPaths: req.agentId ? (config.agents[req.agentId]?.allowedPaths ?? []) : ["**"],
     contractPaths: config.contractPaths,
     fixRoundsDone: req.fixRoundsDone,
     maxFixRounds: MAX_FIX_ROUNDS,
@@ -84,10 +91,26 @@ export async function reviewPullRequest(req: ReviewRequest): Promise<ReviewResul
   const settings = reviewer ? config.clis[reviewer.cli] : undefined;
   if (!reviewer || !settings) throw new Error(`Relecteur inconnu : ${req.reviewerId}`);
   const adapter = adapterFor(settings.adapter);
+
+  // Written after the validations so that lint never sees them; `git clean` removes them later.
+  mkdirSync(join(config.reviewWorktree, REVIEW_INPUT_DIR), { recursive: true });
+  const diffFile = `${REVIEW_INPUT_DIR}/pr-${req.pr.number}.diff`;
+  writeFileSync(join(config.reviewWorktree, diffFile), req.diff);
+  let issueFile: string | undefined;
+  if (req.issue !== undefined && req.issueText) {
+    issueFile = `${REVIEW_INPUT_DIR}/issue-${req.issue}.md`;
+    writeFileSync(join(config.reviewWorktree, issueFile), req.issueText);
+  }
+
   req.onLine(`Relecture par ${req.reviewerId} (${reviewer.model})…`);
   const run = startRun(
     adapter,
-    adapter.launch(settings, reviewer.model, "reviewer", reviewPrompt(req.pr.number, req.issue)),
+    adapter.launch(
+      settings,
+      reviewer.model,
+      "reviewer",
+      reviewPrompt(req.pr.number, diffFile, issueFile),
+    ),
     config.reviewWorktree,
     join(req.logsDir, `review-pr${req.pr.number}-${Date.now()}.log`),
     config.runTimeoutMinutes * 60_000,

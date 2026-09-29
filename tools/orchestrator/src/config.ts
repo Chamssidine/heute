@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import type { CliSettings } from "./adapters/index.ts";
+import { adapterFor, type CliSettings } from "./adapters/index.ts";
 
 // Agents are declared in config.json: adding one (or switching its LLM) needs no code change.
 export interface AgentConfig {
@@ -40,8 +40,11 @@ export function loadConfig(path: URL): Config {
       problems.push(`agent ${id} : CLI « ${agent.cli} » absente de clis`);
   }
   for (const [id, reviewer] of Object.entries(config.reviewers)) {
-    if (!config.clis[reviewer.cli])
-      problems.push(`relecteur ${id} : CLI « ${reviewer.cli} » absente de clis`);
+    const cli = config.clis[reviewer.cli];
+    if (!cli) problems.push(`relecteur ${id} : CLI « ${reviewer.cli} » absente de clis`);
+    // The review must produce a verdict on its own, so it cannot use an IDE-only agent.
+    else if (adapterFor(cli.adapter).mode === "manual")
+      problems.push(`relecteur ${id} : une CLI manuelle ne peut pas relire`);
   }
   if (!config.reviewers[config.defaultReviewer]) problems.push("defaultReviewer inconnu");
   if (problems.length > 0) throw new Error(`config.json invalide :\n- ${problems.join("\n- ")}`);
