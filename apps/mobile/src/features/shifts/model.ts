@@ -41,10 +41,6 @@ export interface ShiftDay {
   label: string;
   badgeLabel: string;
   hours: string;
-  start1?: string;
-  end1?: string;
-  start2?: string;
-  end2?: string;
   isSunday: boolean;
   istMinutes: number;
 }
@@ -55,9 +51,6 @@ export interface ShiftDay {
 export interface MyShiftsView {
   month: string;
   days: ShiftDay[];
-  istMinutes: number;
-  sollMinutes: number;
-  diffMinutes: number;
   ist: number;
   soll: number;
   diff: number;
@@ -65,7 +58,7 @@ export interface MyShiftsView {
 
 /**
  * Formate la plage horaire d'un service au format HH:MM avec tiret demi-cadratin.
- * Exemple : « 08:00–16:30 » ou « 08:00–13:00 · 18:00–21:00 » pour un Teildienst.
+ * Exemple : « 08:00–16:30 » ou « 08:00–13:00\n18:00–21:00 » pour un Teildienst (screens.md §6.5).
  */
 export function formatShiftHours(shift: ShiftInput): string {
   if (shift.type === "normal" && shift.start1 != null && shift.end1 != null) {
@@ -76,7 +69,7 @@ export function formatShiftHours(shift: ShiftInput): string {
     const slot1 = `${formatHHMM(shift.start1)}–${formatHHMM(shift.end1)}`;
     if (shift.start2 != null && shift.end2 != null) {
       const slot2 = `${formatHHMM(shift.start2)}–${formatHHMM(shift.end2)}`;
-      return `${slot1} · ${slot2}`;
+      return `${slot1}\n${slot2}`;
     }
     return slot1;
   }
@@ -88,25 +81,20 @@ export function formatShiftHours(shift: ShiftInput): string {
  * Transforme une entrée de service en ShiftDay typé pour l'interface.
  */
 export function toShiftDay(shift: ShiftInput): ShiftDay {
-  const isSunday =
-    typeof shift.isSunday === "boolean"
-      ? shift.isSunday
-      : shift.date
-        ? isSundayDate(shift.date)
-        : false;
+  if (!shift.date) {
+    throw new Error("ShiftDay requires a valid date (YYYY-MM-DD)");
+  }
+
+  const isSunday = typeof shift.isSunday === "boolean" ? shift.isSunday : isSundayDate(shift.date);
 
   const istMinutes = workedMinutes(shift);
 
   return {
-    date: shift.date ?? "",
+    date: shift.date,
     type: shift.type,
     label: SHIFT_LABELS[shift.type],
     badgeLabel: SHIFT_BADGE_LABELS[shift.type],
     hours: formatShiftHours(shift),
-    start1: shift.start1 != null ? formatHHMM(shift.start1) : undefined,
-    end1: shift.end1 != null ? formatHHMM(shift.end1) : undefined,
-    start2: shift.start2 != null ? formatHHMM(shift.start2) : undefined,
-    end2: shift.end2 != null ? formatHHMM(shift.end2) : undefined,
     isSunday,
     istMinutes,
   };
@@ -126,9 +114,6 @@ export function createMyShiftsView(
   return {
     month,
     days,
-    istMinutes: balance.istMinutes,
-    sollMinutes: balance.sollMinutes,
-    diffMinutes: balance.diffMinutes,
     ist: balance.istMinutes,
     soll: balance.sollMinutes,
     diff: balance.diffMinutes,
@@ -195,5 +180,3 @@ export const myShiftsFixture: MyShiftsView = createMyShiftsView(
   OCTOBER_2026_SHIFTS,
   174 * 60,
 );
-
-export const mockMyShifts: MyShiftsView = myShiftsFixture;

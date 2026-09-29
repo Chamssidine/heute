@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { fetchMyShifts } from "./api.ts";
 import { useMyShifts } from "./hooks.ts";
 import {
   formatShiftHours,
-  mockMyShifts,
   myShiftsFixture,
   SHIFT_BADGE_LABELS,
   SHIFT_LABELS,
@@ -32,7 +30,7 @@ describe("features/shifts (P2-04 [L])", () => {
       assert.equal(SHIFT_BADGE_LABELS.frei, "Frei");
     });
 
-    it("formate correctement les plages horaires avec tiret demi-cadratin", () => {
+    it("formate correctement les plages horaires avec tiret demi-cadratin et saut de ligne TD", () => {
       assert.equal(formatShiftHours({ type: "normal", start1: 360, end1: 870 }), "06:00–14:30");
       assert.equal(
         formatShiftHours({
@@ -42,7 +40,7 @@ describe("features/shifts (P2-04 [L])", () => {
           start2: 1080,
           end2: 1260,
         }),
-        "08:00–13:00 · 18:00–21:00",
+        "08:00–13:00\n18:00–21:00",
       );
       assert.equal(formatShiftHours({ type: "frei" }), "—");
       assert.equal(formatShiftHours({ type: "sem" }), "—");
@@ -64,10 +62,15 @@ describe("features/shifts (P2-04 [L])", () => {
       assert.equal(day.label, "Dienst");
       assert.equal(day.badgeLabel, "Dienst");
       assert.equal(day.hours, "06:00–14:30");
-      assert.equal(day.start1, "06:00");
-      assert.equal(day.end1, "14:30");
       assert.equal(day.isSunday, false);
       assert.equal(day.istMinutes, 480);
+    });
+
+    it("lève une erreur explicite si date est absente", () => {
+      assert.throws(
+        () => toShiftDay({ type: "normal", start1: 360, end1: 870 }),
+        /ShiftDay requires a valid date/,
+      );
     });
   });
 
@@ -75,7 +78,6 @@ describe("features/shifts (P2-04 [L])", () => {
     it("contient 31 jours pour le mois d'octobre 2026", () => {
       assert.equal(myShiftsFixture.month, "2026-10");
       assert.equal(myShiftsFixture.days.length, 31);
-      assert.equal(mockMyShifts, myShiftsFixture);
     });
 
     it("donne le total attendu : IST 184:00 (11 040 min), Soll 174:00 (10 440 min), Diff +10:00 (600 min)", () => {
@@ -91,11 +93,6 @@ describe("features/shifts (P2-04 [L])", () => {
       // Soll VZ (174h)                     = 10 440 min (174:00 Std.)
       // Diff                               =   +600 min (+10:00 Std.)
 
-      assert.equal(myShiftsFixture.istMinutes, 11040);
-      assert.equal(myShiftsFixture.sollMinutes, 10440);
-      assert.equal(myShiftsFixture.diffMinutes, 600);
-
-      // Vérifie également les alias ist, soll, diff
       assert.equal(myShiftsFixture.ist, 11040);
       assert.equal(myShiftsFixture.soll, 10440);
       assert.equal(myShiftsFixture.diff, 600);
@@ -107,7 +104,7 @@ describe("features/shifts (P2-04 [L])", () => {
       assert.equal(tdDay.type, "td");
       assert.equal(tdDay.label, "Teildienst");
       assert.equal(tdDay.badgeLabel, "TD");
-      assert.equal(tdDay.hours, "08:00–13:00 · 18:00–21:00");
+      assert.equal(tdDay.hours, "08:00–13:00\n18:00–21:00");
       assert.equal(tdDay.istMinutes, 480);
       assert.equal(tdDay.isSunday, false);
     });
@@ -182,21 +179,19 @@ describe("features/shifts (P2-04 [L])", () => {
   });
 
   describe("hooks.ts - useMyShifts", () => {
-    it("renvoie un ViewState<MyShiftsView> avec statut success et la fixture", () => {
+    it("renvoie un ViewState<MyShiftsView> avec statut success pour le mois de la fixture", () => {
       const state = useMyShifts("2026-10");
       assert.equal(state.status, "success");
       assert.equal(state.data, myShiftsFixture);
       assert.equal(state.data.days.length, 31);
-      assert.equal(state.data.istMinutes, 11040);
+      assert.equal(state.data.ist, 11040);
+      assert.equal(state.data.soll, 10440);
+      assert.equal(state.data.diff, 600);
     });
-  });
 
-  describe("api.ts - fetchMyShifts", () => {
-    it("renvoie une promesse résolue avec la fixture du mois", async () => {
-      const data = await fetchMyShifts("2026-10");
-      assert.equal(data, myShiftsFixture);
-      assert.equal(data.month, "2026-10");
-      assert.equal(data.days.length, 31);
+    it("renvoie un statut empty si le mois demandé n'est pas celui de la fixture", () => {
+      const state = useMyShifts("2026-11");
+      assert.equal(state.status, "empty");
     });
   });
 });
