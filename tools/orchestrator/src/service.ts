@@ -1,0 +1,308 @@
+// Every action that launches an agent or merges code is triggered by the human from the
+// dashboard. The service only prepares, runs what was asked, and reviews read-only.
+import { join } from "node:path";
+import { adapterFor } from "./adapters/index.ts";
+import { agentOfBranch, type Config } from "./config.ts";
+import { nextIssue, queueFor, STATUS_LABELS } from "./decisions.ts";
+import type { GitHub, PullRequest } from "./github.ts";
+import { fixPrompt, taskPrompt } from "./prompts.ts";
+import { reviewComment, reviewPullRequest } from "./review.ts";
+import { startRun, type RunHandle } from "./runner.ts";
+import type { RunKind, RunRecord, Store } from "./store.ts";
+import { ensureWorktree, prepareWorktree } from "./worktree.ts";
+
+const ALL_STATUS = Object.values(STATUS_LABELS);
+
+export class Orchestrator {
+  private readonly config: Config;
+  private readonly github: GitHub;
+  private readonly store: Store;
+  private readonly repoDir: string;
+  private readonly running = new Map<string, { run: RunRecord; handle: RunHandle }>();
+  private reviewing: number | undefined;
+
+  constructor(config: Config, github: GitHub, store: Store, repoDir: string) {
+    this.config = config;
+    this.github = github;
+    this.store = store;
+    this.repoDir = repoDir;
+  }
+
+  async refresh(): Promise<void> {
+    const [issues, prs] = await Promise.all([this.github.issues(), this.github.openPullRequests()]);
+    this.store.live.issues = issues;
+    this.store.live.prs = prs;
+    this.store.live.lastTick = new Date().toISOString();
+    this.store.emit("change");
+  }
+
+  // ---- Human actions ------------------------------------------------------------------
+
+  async launch(agentId: string): Promise<void> {
+    const agent = this.requireAgent(agentId);
+    if (this.running.has(agentId)) throw new Error(`L'agent ${agentId} travaille déjà`);
+    await this.refresh();
+    const issue = nextIssue(agent.label, this.store.live.issues);
+    if (!issue) throw new Error(`Aucune tâche prête pour l'agent ${agentId}`);
+    const branch = `${agent.branchPrefix}/i${issue.number}`;
+    await ensureWorktree(this.repoDir, agent.worktree);
+    await prepareWorktree(agent.worktree, { detach: "main" });
+    await this.github.setLabels(issue.number, [STATUS_LABELS.running]);
+    this.start(
+      agentId,
+      "task",
+      issue.number,
+      undefined,
+      branch,
+      taskPrompt(agentId, agent, issue.number, branch),
+    );
+  }
+
+  async sendBack(prNumber: number, humanNote: string): Promise<void> {
+    const pr = this.requirePr(prNumber);
+    const agentId = this.requireAgentOf(pr);
+    const agent = this.requireAgent(agentId);
+    if (this.running.has(agentId)) throw new Error(`L'agent ${agentId} travaille déjà`);
+    const review = this.store.data.reviews[String(prNumber)];
+    const feedback =
+      [
+        ...(review?.reasons ?? []),
+        ...(review?.reviewerComments ?? []),
+        ...(humanNote.trim() ? [`Note de l'orchestrateur humain : ${humanNote.trim()}`] : []),
+      ]
+        .map((l) => `- ${l}`)
+        .join("\n") || "- Relire la PR et corriger les défauts signalés en commentaire.";
+    const issue = this.issueOfBranch(pr.headRefName);
+    await prepareWorktree(agent.worktree, { branch: pr.headRefName });
+    await this.github.setLabels(prNumber, [STATUS_LABELS.running], this.labelsOn(pr));
+    this.start(
+      agentId,
+      "fix",
+      issue ?? 0,
+      prNumber,
+      pr.headRefName,
+      fixPrompt(agentId, agent, issue ?? 0, prNumber, pr.headRefName, feedback),
+    );
+  }
+
+  async review(prNumber: number, reviewerId: string): Promise<void> {
+    if (this.reviewing !== undefined)
+      throw new Error(`Relecture de la PR #${this.reviewing} en cours`);
+    const pr = this.requirePr(prNumber);
+    const agentId = this.requireAgentOf(pr);
+    const previous = this.store.data.reviews[String(prNumber)];
+    const fixRounds = previous?.fixRounds ?? 0;
+    this.reviewing = prNumber;
+    this.store.setActivity(`Relecture de la PR #${prNumber}`);
+    try {
+      await this.github.setLabels(prNumber, [STATUS_LABELS.review], this.labelsOn(pr));
+      const result = await reviewPullRequest({
+        config: this.config,
+        agentId,
+        reviewerId,
+        pr,
+        files: await this.github.pullRequestFiles(prNumber),
+        issue: this.issueOfBranch(pr.headRefName),
+        fixRoundsDone: fixRounds,
+        logsDir: this.store.logsDir,
+        onLine: (l) => this.store.pushLine("review", l),
+      });
+      const label = {
+        ready: STATUS_LABELS.ready,
+        human: STATUS_LABELS.human,
+        changes: STATUS_LABELS.changes,
+      }[result.outcome];
+      await this.github.comment(prNumber, reviewComment(reviewerId, result));
+      await this.github.setLabels(prNumber, [label], [STATUS_LABELS.review]);
+      this.store.data.reviews[String(prNumber)] = {
+        pr: prNumber,
+        outcome: result.outcome,
+        reviewer: reviewerId,
+        reasons: result.reasons,
+        reviewerComments: result.reviewerComments,
+        at: new Date().toISOString(),
+        fixRounds,
+      };
+      this.store.log("info", `PR #${prNumber} relue par ${reviewerId} : ${result.outcome}`);
+    } catch (error) {
+      this.store.log("error", `Relecture PR #${prNumber} : ${(error as Error).message}`);
+    } finally {
+      this.reviewing = undefined;
+      this.store.setActivity(undefined);
+      await this.refresh().catch(() => undefined);
+    }
+  }
+
+  async merge(prNumber: number): Promise<void> {
+    const pr = this.requirePr(prNumber);
+    await this.github.merge(prNumber);
+    this.store.log("info", `PR #${prNumber} mergée par l'humain (${pr.title})`);
+    await this.refresh();
+  }
+
+  stop(agentId: string): void {
+    const current = this.running.get(agentId);
+    if (!current) throw new Error(`L'agent ${agentId} ne travaille pas`);
+    current.handle.stop();
+    this.store.log("warn", `Agent ${agentId} arrêté par l'humain`);
+  }
+
+  async unblock(issueNumber: number): Promise<void> {
+    await this.github.setLabels(issueNumber, [], [STATUS_LABELS.blocked]);
+    await this.refresh();
+  }
+
+  // ---- Internals ------------------------------------------------------------------------
+
+  private start(
+    agentId: string,
+    kind: RunKind,
+    issue: number,
+    pr: number | undefined,
+    branch: string,
+    prompt: string,
+  ): void {
+    const agent = this.requireAgent(agentId);
+    const settings = this.config.clis[agent.cli];
+    if (!settings) throw new Error(`CLI inconnue : ${agent.cli}`);
+    const adapter = adapterFor(settings.adapter);
+    const id = `${agentId}-${Date.now()}`;
+    const run: RunRecord = {
+      id,
+      agent: agentId,
+      kind,
+      issue,
+      pr,
+      branch,
+      startedAt: new Date().toISOString(),
+      logFile: join(this.store.logsDir, `${id}.log`),
+    };
+    this.store.live.liveLines[agentId] = [];
+    const handle = startRun(
+      adapter,
+      adapter.launch(settings, agent.model, "agent", prompt),
+      agent.worktree,
+      run.logFile,
+      this.config.runTimeoutMinutes * 60_000,
+      (line) => this.store.pushLine(agentId, line),
+    );
+    this.running.set(agentId, { run, handle });
+    this.store.data.runs.push(run);
+    this.store.log(
+      "info",
+      `Agent ${agentId} lancé (${kind}) sur #${pr ?? issue}, branche ${branch}`,
+    );
+    void handle.done.then(({ code }) => this.finish(run, code));
+  }
+
+  private async finish(run: RunRecord, code: number): Promise<void> {
+    this.running.delete(run.agent);
+    run.endedAt = new Date().toISOString();
+    run.exitCode = code;
+    try {
+      const pr = await this.github.findPullRequest(run.branch);
+      if (run.kind === "task") await this.github.setLabels(run.issue, [], [STATUS_LABELS.running]);
+      if (!pr) {
+        run.result = "aucune PR";
+        if (run.kind === "task") await this.github.setLabels(run.issue, [STATUS_LABELS.blocked]);
+        this.store.log(
+          "warn",
+          `Agent ${run.agent} terminé (code ${code}) sans PR pour #${run.issue}`,
+        );
+        return;
+      }
+      run.result = `PR #${pr.number}`;
+      if (run.kind === "fix") {
+        const review = this.store.data.reviews[String(pr.number)];
+        if (review) review.fixRounds += 1;
+        await this.github.setLabels(pr.number, [], [STATUS_LABELS.running]);
+      }
+      this.store.log("info", `Agent ${run.agent} terminé : PR #${pr.number}`);
+      await this.refresh();
+      // Read-only review starts on its own: it only validates and comments.
+      await this.review(pr.number, this.config.defaultReviewer);
+    } catch (error) {
+      this.store.log("error", `Fin de l'agent ${run.agent} : ${(error as Error).message}`);
+    } finally {
+      this.store.save();
+    }
+  }
+
+  private labelsOn(pr: PullRequest): string[] {
+    return pr.labels.filter((l) => (ALL_STATUS as string[]).includes(l));
+  }
+
+  private issueOfBranch(branch: string): number | undefined {
+    const match = branch.match(/\/i(\d+)$/);
+    return match ? Number(match[1]) : undefined;
+  }
+
+  private requireAgent(id: string) {
+    const agent = this.config.agents[id];
+    if (!agent) throw new Error(`Agent inconnu : ${id}`);
+    return agent;
+  }
+
+  private requirePr(number: number): PullRequest {
+    const pr = this.store.live.prs.find((p) => p.number === number);
+    if (!pr) throw new Error(`PR #${number} introuvable ou fermée`);
+    return pr;
+  }
+
+  private requireAgentOf(pr: PullRequest): string {
+    const id = agentOfBranch(this.config, pr.headRefName);
+    if (!id) throw new Error(`La branche ${pr.headRefName} n'appartient à aucun agent`);
+    return id;
+  }
+
+  // ---- View for the dashboard -------------------------------------------------------------
+
+  view(): unknown {
+    const { live, data } = this.store;
+    const agents = Object.entries(this.config.agents).map(([id, a]) => {
+      const current = this.running.get(id);
+      return {
+        id,
+        name: a.name,
+        cli: a.cli,
+        model: a.model,
+        verified: adapterFor(this.config.clis[a.cli]?.adapter ?? "").verified,
+        run: current?.run,
+        lines: live.liveLines[id] ?? [],
+        queue: queueFor(a.label, live.issues).map((q) => ({
+          number: q.issue.number,
+          title: q.issue.title,
+          ready: q.ready,
+          waitingFor: q.waitingFor,
+        })),
+      };
+    });
+    return {
+      repo: this.config.repo,
+      lastRefresh: live.lastTick,
+      activity: live.activity,
+      reviewers: Object.entries(this.config.reviewers).map(([id, r]) => ({
+        id,
+        model: r.model,
+        verified: adapterFor(this.config.clis[r.cli]?.adapter ?? "").verified,
+      })),
+      defaultReviewer: this.config.defaultReviewer,
+      reviewLines: live.liveLines["review"] ?? [],
+      agents,
+      prs: live.prs.map((p) => ({
+        ...p,
+        agent: agentOfBranch(this.config, p.headRefName),
+        review: data.reviews[String(p.number)],
+      })),
+      attention: live.issues
+        .filter(
+          (i) =>
+            i.state === "OPEN" &&
+            i.labels.some((l) => l === STATUS_LABELS.blocked || l === STATUS_LABELS.humanTask),
+        )
+        .map((i) => ({ number: i.number, title: i.title, labels: i.labels })),
+      runs: data.runs.slice(-15).reverse(),
+      events: data.events.slice(-40).reverse(),
+    };
+  }
+}

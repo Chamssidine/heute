@@ -36,3 +36,6 @@ supabase/.temp/
 Thumbs.db
 *.log
 coverage/
+
+# Orchestrateur : état local et logs des agents
+tools/orchestrator/.state/

@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Heute · Orchestrateur</title>
+    <style>
+      :root {
+        --bg: #f5f6f8;
+        --surface: #ffffff;
+        --muted-bg: #eef0f3;
+        --border: #cdd2da;
+        --text: #111827;
+        --muted: #4b5563;
+        --primary: #1d4ed8;
+        --on-primary: #ffffff;
+        --ok: #15803d;
+        --ok-bg: #dcfce7;
+        --warn: #b45309;
+        --warn-bg: #fef3c7;
+        --bad: #b91c1c;
+        --bad-bg: #fee2e2;
+        --code-bg: #111827;
+        --code-text: #e5e7eb;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f141a;
+          --surface: #171d25;
+          --muted-bg: #202833;
+          --border: #2e3846;
+          --text: #f2f4f7;
+          --muted: #a9b2c0;
+          --primary: #8ab4ff;
+          --on-primary: #0b1220;
+          --ok: #4ade80;
+          --ok-bg: #14301f;
+          --warn: #fbbf24;
+          --warn-bg: #33270d;
+          --bad: #f87171;
+          --bad-bg: #3a1717;
+          --code-bg: #0b0f14;
+          --code-text: #d1d5db;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          15px/1.45 system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 24px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+      }
+      header h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      main {
+        padding: 16px 24px 48px;
+        display: grid;
+        gap: 24px;
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 0 0 12px;
+      }
+      .meta {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-width: 0;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .spread {
+        justify-content: space-between;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        background: var(--muted-bg);
+        color: var(--muted);
+      }
+      .chip.ok {
+        background: var(--ok-bg);
+        color: var(--ok);
+      }
+      .chip.warn {
+        background: var(--warn-bg);
+        color: var(--warn);
+      }
+      .chip.bad {
+        background: var(--bad-bg);
+        color: var(--bad);
+      }
+      button,
+      select {
+        font: inherit;
+        min-height: 40px;
+        padding: 0 14px;
+        border-radius: 8px;
+        cursor: pointer;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text);
+      }
+      button.primary {
+        background: var(--primary);
+        color: var(--on-primary);
+        border-color: var(--primary);
+        font-weight: 600;
+      }
+      button.danger {
+        color: var(--bad);
+        border-color: var(--bad);
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      button:focus-visible,
+      select:focus-visible,
+      a:focus-visible {
+        outline: 3px solid var(--primary);
+        outline-offset: 2px;
+      }
+      pre.log {
+        margin: 0;
+        background: var(--code-bg);
+        color: var(--code-text);
+        border-radius: 8px;
+        padding: 10px;
+        font:
+          12px/1.5 ui-monospace,
+          Consolas,
+          monospace;
+        max-height: 260px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      ul.list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 6px;
+      }
+      ul.list li {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+        flex-wrap: wrap;
+      }
+      a {
+        color: var(--primary);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      th {
+        font-size: 13px;
+        color: var(--muted);
+        background: var(--muted-bg);
+      }
+      .table-wrap {
+        overflow-x: auto;
+      }
+      .empty {
+        color: var(--muted);
+        font-style: italic;
+      }
+      #toast {
+        position: fixed;
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 10px 16px;
+        border-radius: 8px;
+        background: var(--text);
+        color: var(--bg);
+        display: none;
+        max-width: 90vw;
+      }
+      details summary {
+        cursor: pointer;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      @media (max-width: 640px) {
+        header,
+        main {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Heute · Orchestrateur</h1>
+        <div class="meta" id="meta">Connexion…</div>
+      </div>
+      <div class="row">
+        <span class="chip" id="conn">hors ligne</span>
+        <button id="refresh">Actualiser GitHub</button>
+      </div>
+    </header>
+    <main>
+      <section aria-labelledby="h-agents">
+        <h2 id="h-agents">Agents</h2>
+        <div class="grid" id="agents"></div>
+      </section>
+      <section aria-labelledby="h-prs">
+        <h2 id="h-prs">Pull requests</h2>
+        <div class="table-wrap" id="prs"></div>
+      </section>
+      <section aria-labelledby="h-review" class="card">
+        <h2 id="h-review">Relecture en direct</h2>
+        <pre class="log" id="review" aria-live="polite"></pre>
+      </section>
+      <section aria-labelledby="h-attn">
+        <h2 id="h-attn">À traiter par toi</h2>
+        <div id="attention"></div>
+      </section>
+      <div class="grid">
+        <section aria-labelledby="h-runs" class="card">
+          <h2 id="h-runs">Derniers lancements</h2>
+          <ul class="list" id="runs"></ul>
+        </section>
+        <section aria-labelledby="h-events" class="card">
+          <h2 id="h-events">Journal</h2>
+          <ul class="list" id="events"></ul>
+        </section>
+      </div>
+    </main>
+    <div id="toast" role="status"></div>
+    <script>
+      let state = null;
+      const $ = (id) => document.getElementById(id);
+      // All GitHub text goes through textContent: never innerHTML.
+      function h(tag, attrs = {}, ...children) {
+        const el = document.createElement(tag);
+        for (const [k, v] of Object.entries(attrs)) {
+          if (k === "class") el.className = v;
+          else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+          else if (v !== false && v !== undefined) el.setAttribute(k, v === true ? "" : v);
+        }
+        for (const c of children.flat())
+          if (c !== null && c !== undefined) el.append(c.nodeType ? c : String(c));
+        return el;
+      }
+      function toast(text) {
+        const t = $("toast");
+        t.textContent = text;
+        t.style.display = "block";
+        clearTimeout(toast.timer);
+        toast.timer = setTimeout(() => (t.style.display = "none"), 5000);
+      }
+      async function act(action, body = {}) {
+        const res = await fetch(`/api/actions/${action}`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-orchestrator": "1" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) toast(`Erreur : ${data.error ?? res.status}`);
+        else toast("Fait.");
+      }
+      const since = (iso) => {
+        const s = Math.floor((Date.now() - new Date(iso)) / 1000);
+        return s < 60
+          ? `${s} s`
+          : s < 3600
+            ? `${Math.floor(s / 60)} min`
+            : `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`;
+      };
+      const time = (iso) =>
+        new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+      const issueLink = (n) =>
+        h(
+          "a",
+          {
+            href: `https://github.com/${state.repo}/issues/${n}`,
+            target: "_blank",
+            rel: "noopener",
+          },
+          `#${n}`,
+        );
+      const outcomeChip = (o) =>
+        o === "ready"
+          ? h("span", { class: "chip ok" }, "prête à merger")
+          : o === "changes"
+            ? h("span", { class: "chip warn" }, "corrections demandées")
+            : o === "human"
+              ? h("span", { class: "chip bad" }, "attention humaine")
+              : o
+                ? h("span", { class: "chip" }, o)
+                : h("span", { class: "chip" }, "pas encore relue");
+
+      function renderAgents() {
+        $("agents").replaceChildren(
+          ...state.agents.map((a) => {
+            const ready = a.queue.find((q) => q.ready);
+            const running = a.run;
+            return h(
+              "article",
+              { class: "card", "aria-label": `Agent ${a.id}` },
+              h(
+                "div",
+                { class: "row spread" },
+                h("strong", {}, `${a.id} · ${a.name}`),
+                running
+                  ? h("span", { class: "chip warn" }, `en cours · ${since(running.startedAt)}`)
+                  : h("span", { class: "chip ok" }, "libre"),
+              ),
+              h(
+                "div",
+                { class: "meta" },
+                `${a.cli} · ${a.model}`,
+                a.verified
+                  ? null
+                  : h(
+                      "span",
+                      { class: "chip warn", style: "margin-left:8px" },
+                      "adaptateur non vérifié",
+                    ),
+              ),
+              running
+                ? h(
+                    "div",
+                    {},
+                    running.kind === "fix" ? "Correction de la PR " : "Tâche ",
+                    issueLink(running.pr ?? running.issue),
+                    ` · ${running.branch}`,
+                  )
+                : h(
+                    "div",
+                    {},
+                    "Prochaine tâche : ",
+                    ready
+                      ? [issueLink(ready.number), ` ${ready.title}`]
+                      : h("span", { class: "empty" }, "aucune prête"),
+                  ),
+              h(
+                "div",
+                { class: "row" },
+                h(
+                  "button",
+                  {
+                    class: "primary",
+                    disabled: Boolean(running) || !ready,
+                    onclick: () => act("launch", { agent: a.id }),
+                  },
+                  "Lancer la prochaine tâche",
+                ),
+                h(
+                  "button",
+                  {
+                    class: "danger",
+                    disabled: !running,
+                    onclick: () =>
+                      confirm(`Arrêter l'agent ${a.id} ?`) && act("stop", { agent: a.id }),
+                  },
+                  "Arrêter",
+                ),
+              ),
+              h(
+                "pre",
+                { class: "log", "aria-label": `Log de l'agent ${a.id}` },
+                a.lines.length ? a.lines.join("\n") : "—",
+              ),
+              h(
+                "details",
+                { "data-key": a.id },
+                h("summary", {}, `File (${a.queue.length})`),
+                a.queue.length
+                  ? h(
+                      "ul",
+                      { class: "list" },
+                      a.queue.map((q) =>
+                        h(
+                          "li",
+                          {},
+                          issueLink(q.number),
+                          q.title,
+                          q.ready
+                            ? h("span", { class: "chip ok" }, "prête")
+                            : h(
+                                "span",
+                                { class: "chip" },
+                                `attend ${q.waitingFor.map((n) => "#" + n).join(", ")}`,
+                              ),
+                        ),
+                      ),
+                    )
+                  : h("p", { class: "empty" }, "File vide"),
+              ),
+            );
+          }),
+        );
+      }
+
+      function renderPrs() {
+        if (!state.prs.length) {
+          $("prs").replaceChildren(h("p", { class: "empty" }, "Aucune PR ouverte"));
+          return;
+        }
+        const reviewerSelect = (pr) =>
+          h(
+            "select",
+            { "aria-label": `Relecteur pour la PR ${pr.number}` },
+            state.reviewers.map((r) =>
+              h(
+                "option",
+                { value: r.id, selected: r.id === state.defaultReviewer },
+                `${r.id}${r.verified ? "" : " (non vérifié)"}`,
+              ),
+            ),
+          );
+        $("prs").replaceChildren(
+          h(
+            "table",
+            {},
+            h(
+              "thead",
+              {},
+              h(
+                "tr",
+                {},
+                ["PR", "Agent", "Relecture", "Actions"].map((t) => h("th", { scope: "col" }, t)),
+              ),
+            ),
+            h(
+              "tbody",
+              {},
+              state.prs.map((pr) => {
+                const select = reviewerSelect(pr);
+                const r = pr.review;
+                const contract = r?.outcome === "human";
+                return h(
+                  "tr",
+                  {},
+                  h(
+                    "td",
+                    {},
+                    h("a", { href: pr.url, target: "_blank", rel: "noopener" }, `#${pr.number}`),
+                    " ",
+                    pr.title,
+                    h(
+                      "div",
+                      { class: "row" },
+                      pr.labels.map((l) => h("span", { class: "chip" }, l)),
+                    ),
+                  ),
+                  h("td", {}, pr.agent ?? "—"),
+                  h(
+                    "td",
+                    {},
+                    outcomeChip(r?.outcome),
+                    r
+                      ? h(
+                          "div",
+                          { class: "meta" },
+                          `${r.reviewer} · ${time(r.at)} · corrections : ${r.fixRounds}`,
+                        )
+                      : null,
+                    r
+                      ? h(
+                          "ul",
+                          { class: "list" },
+                          [...r.reasons, ...r.reviewerComments].map((t) => h("li", {}, t)),
+                        )
+                      : null,
+                  ),
+                  h(
+                    "td",
+                    {},
+                    h(
+                      "div",
+                      { class: "row" },
+                      select,
+                      h(
+                        "button",
+                        {
+                          disabled: Boolean(state.activity),
+                          onclick: () =>
+                            act("review", { number: pr.number, reviewer: select.value }),
+                        },
+                        "Relire",
+                      ),
+                      h(
+                        "button",
+                        {
+                          disabled: !pr.agent,
+                          onclick: () => {
+                            const note = prompt("Note pour l'agent (facultatif) :", "");
+                            if (note !== null) act("sendback", { number: pr.number, note });
+                          },
+                        },
+                        "Renvoyer à l'agent",
+                      ),
+                      h(
+                        "button",
+                        {
+                          class: "primary",
+                          onclick: () => {
+                            const warning = contract
+                              ? "\n\nATTENTION : cette PR touche un contrat ou n'a pas de verdict clair. Lis le diff sur GitHub avant."
+                              : "";
+                            if (confirm(`Merger la PR #${pr.number} dans main ?${warning}`))
+                              act("merge", { number: pr.number });
+                          },
+                        },
+                        "Merger",
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+        );
+      }
+
+      function renderRest() {
+        $("review").textContent = state.reviewLines.length ? state.reviewLines.join("\n") : "—";
+        $("attention").replaceChildren(
+          state.attention.length
+            ? h(
+                "ul",
+                { class: "list card" },
+                state.attention.map((i) =>
+                  h(
+                    "li",
+                    {},
+                    issueLink(i.number),
+                    i.title,
+                    i.labels.map((l) => h("span", { class: "chip bad" }, l)),
+                    i.labels.includes("bloquée")
+                      ? h(
+                          "button",
+                          { onclick: () => act("unblock", { number: i.number }) },
+                          "Débloquer",
+                        )
+                      : null,
+                  ),
+                ),
+              )
+            : h("p", { class: "empty" }, "Rien à traiter"),
+        );
+        $("runs").replaceChildren(
+          ...(state.runs.length
+            ? state.runs.map((r) =>
+                h(
+                  "li",
+                  {},
+                  h("span", { class: "meta" }, time(r.startedAt)),
+                  h("strong", {}, r.agent),
+                  r.kind,
+                  issueLink(r.pr ?? r.issue),
+                  r.endedAt
+                    ? h(
+                        "span",
+                        { class: r.result?.startsWith("PR") ? "chip ok" : "chip bad" },
+                        r.result ?? `code ${r.exitCode}`,
+                      )
+                    : h("span", { class: "chip warn" }, "en cours"),
+                ),
+              )
+            : [h("li", { class: "empty" }, "Aucun lancement")]),
+        );
+        $("events").replaceChildren(
+          ...(state.events.length
+            ? state.events.map((e) =>
+                h(
+                  "li",
+                  {},
+                  h("span", { class: "meta" }, time(e.at)),
+                  h(
+                    "span",
+                    {
+                      class:
+                        e.level === "error"
+                          ? "chip bad"
+                          : e.level === "warn"
+                            ? "chip warn"
+                            : "chip",
+                    },
+                    e.level,
+                  ),
+                  e.text,
+                ),
+              )
+            : [h("li", { class: "empty" }, "Journal vide")]),
+        );
+        $("meta").textContent =
+          `${state.repo} · GitHub actualisé à ${state.lastRefresh ? time(state.lastRefresh) : "—"}${state.activity ? ` · ${state.activity}` : ""}`;
+      }
+
+      // Re-render a block only when its data changed, so open menus and selects are not reset.
+      const last = {};
+      function changed(key, value) {
+        const s = JSON.stringify(value);
+        if (last[key] === s) return false;
+        last[key] = s;
+        return true;
+      }
+      function render() {
+        if (!state) return;
+        const open = new Set(
+          [...document.querySelectorAll("#agents details[open]")].map((d) => d.dataset.key),
+        );
+        if (changed("agents", [state.agents, Math.floor(Date.now() / 15000)])) renderAgents();
+        open.forEach((k) =>
+          document.querySelector(`#agents details[data-key="${k}"]`)?.setAttribute("open", ""),
+        );
+        if (changed("prs", [state.prs, state.reviewers, state.activity])) renderPrs();
+        renderRest();
+      }
+
+      function connect() {
+        const source = new EventSource("/api/events");
+        source.onopen = () => {
+          $("conn").textContent = "connecté";
+          $("conn").className = "chip ok";
+        };
+        source.onmessage = (e) => {
+          state = JSON.parse(e.data);
+          render();
+        };
+        source.onerror = () => {
+          $("conn").textContent = "hors ligne";
+          $("conn").className = "chip bad";
+        };
+      }
+      $("refresh").addEventListener("click", () => act("refresh"));
+      setInterval(render, 15000);
+      connect();
+    </script>
+  </body>
+</html>

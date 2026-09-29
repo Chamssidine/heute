@@ -1,0 +1,106 @@
+{
+  "repo": "Chamssidine/heute",
+  "port": 4000,
+  "refreshSeconds": 60,
+  "runTimeoutMinutes": 45,
+  "gh": "C:\\Program Files\\GitHub CLI\\gh.exe",
+  "clis": {
+    "claude": {
+      "adapter": "claude",
+      "command": "C:\\Users\\chams\\.local\\bin\\claude.exe"
+    },
+    "gemini": {
+      "adapter": "gemini",
+      "command": "C:\\Users\\chams\\AppData\\Roaming\\npm\\node_modules\\@google\\gemini-cli\\bundle\\gemini.js",
+      "extraArgs": { "agent": ["--approval-mode", "yolo"] }
+    },
+    "codex": {
+      "adapter": "codex",
+      "command": "codex"
+    }
+  },
+  "reviewers": {
+    "claude": { "cli": "claude", "model": "claude-opus-5-5" },
+    "codex": { "cli": "codex", "model": "gpt-5-codex" }
+  },
+  "defaultReviewer": "claude",
+  "reviewWorktree": "C:\\dev\\heute-review",
+  "agents": {
+    "A": {
+      "name": "Admin + backend",
+      "cli": "claude",
+      "model": "claude-sonnet-5-5",
+      "worktree": "C:\\dev\\heute-a",
+      "label": "agent:A",
+      "branchPrefix": "a",
+      "brief": "docs/agents/admin.md",
+      "allowedPaths": [
+        "supabase/migrations/**",
+        "supabase/tests/**",
+        "supabase/seed.sql",
+        "supabase/config.toml",
+        "apps/admin/**",
+        "packages/domain/src/{codes,labels,validation,errors,roles}/**",
+        "packages/domain/src/database.types.ts",
+        "packages/domain/src/index.ts",
+        "docs/adr/**",
+        "package.json",
+        "package-lock.json"
+      ]
+    },
+    "L": {
+      "name": "Mobile logique",
+      "cli": "gemini",
+      "model": "gemini-3.8-flash",
+      "worktree": "C:\\dev\\heute-l",
+      "label": "agent:L",
+      "branchPrefix": "l",
+      "brief": "docs/agents/mobile-logic.md",
+      "allowedPaths": [
+        "apps/mobile/src/lib/{supabase,query,network,realtime,push}/**",
+        "apps/mobile/src/features/*/{model,api,hooks}.ts",
+        "apps/mobile/src/features/*/*.test.ts",
+        "apps/mobile/app.json",
+        "apps/mobile/app.config.*",
+        "apps/mobile/eas.json",
+        "apps/mobile/package.json",
+        "packages/domain/src/{time,format}/**",
+        "packages/domain/src/index.ts",
+        "supabase/functions/notify/**",
+        "package-lock.json"
+      ]
+    },
+    "U": {
+      "name": "Mobile UI",
+      "cli": "gemini",
+      "model": "gemini-3.8-flash",
+      "worktree": "C:\\dev\\heute-u",
+      "label": "agent:U",
+      "branchPrefix": "u",
+      "brief": "docs/agents/mobile-ui.md",
+      "allowedPaths": [
+        "apps/mobile/src/app/**",
+        "apps/mobile/src/components/ui/**",
+        "apps/mobile/src/lib/theme/**",
+        "apps/mobile/src/strings/**",
+        "apps/mobile/src/features/*/components/**",
+        "apps/mobile/assets/**",
+        "package-lock.json"
+      ]
+    }
+  },
+  "contractPaths": [
+    "supabase/migrations/**",
+    "supabase/functions/**",
+    "supabase/config.toml",
+    "packages/domain/**",
+    "apps/mobile/src/features/*/model.ts",
+    "**/package.json",
+    "docs/adr/**",
+    "docs/agents/**",
+    ".github/**",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "GEMINI.md"
+  ]
+}
