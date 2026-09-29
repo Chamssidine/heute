@@ -39,6 +39,31 @@ L et U tournent avec la CLI d'Antigravity (`agy -p`), lancée par l'outil comme 
 
 Ne pas utiliser `--dangerously-skip-permissions`, qui autorise tout.
 
+**Syntaxe des règles d'agy**, vérifiée en réel (agy 1.0.12) :
+
+- `command(npm run test)` compare **mot par mot le début** de la commande. Dans une chaîne `;` / `&&` / `|`, chaque morceau est vérifié séparément.
+- Pour `git`, `gh` et `npx`, agy exige la ligne entière : il faut donc une règle `command(regex:…)`, appliquée à toute la ligne. Nos règles excluent `; & | < > $` et l'accent grave, pour qu'une commande autorisée ne puisse pas en cacher une autre.
+- Priorité : `deny` > `ask` > `allow`.
+
+Règles en place (à reproduire sur une autre machine) :
+
+```json
+"allow": [
+  "command(npm run typecheck)", "command(npm run lint)", "command(npm run test)",
+  "command(npm run format)", "command(npm test)", "command(npm install)", "command(npm ci)",
+  "command(regex:git (status|diff|log|show|add|commit|switch|checkout|fetch|pull|push|restore|rev-parse|branch|stash)( [^;&|<>$`]*)?)",
+  "command(regex:gh (issue (view|comment)|pr (create|view|diff|comment|list))( [^;&|<>$`]*)?)",
+  "command(regex:npx (prettier|eslint|tsc|expo)( [^;&|<>$`]*)?)"
+],
+"deny": [
+  "command(gh pr merge)", "command(gh api)", "command(gh repo)", "command(gh secret)",
+  "command(gh auth)", "command(gh workflow)", "command(gh release)",
+  "command(regex:gh (pr merge|api|repo|secret|auth|workflow|release).*)"
+]
+```
+
+Test effectué : `git status --short`, `git log -1 --oneline`, `npm run typecheck`, `gh issue view`, `npx prettier --check` → autorisées ; `git status; echo …`, `git log -1 && echo …`, `npm run typecheck; echo …`, `gh issue view …; echo …`, `echo …`, `gh pr merge` → refusées.
+
 ## Agents dans un IDE sans CLI (mode manuel)
 
 Si un agent ne tourne que dans un IDE, il utilise l'adaptateur `manual` (CLI `antigravity-ide` dans `config.json`) : l'outil ne lance rien lui-même.

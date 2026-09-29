@@ -1,7 +1,10 @@
 import type { AgentConfig } from "./config.ts";
 
 const AUTONOMY = `Tu travailles sans humain : ne pose aucune question et n'attends aucune réponse.
-En cas d'ambiguïté, choisis l'option la plus simple conforme aux règles, et note-la dans la PR.`;
+En cas d'ambiguïté, choisis l'option la plus simple conforme aux règles, et note-la dans la PR.
+Lance une seule commande à la fois, sans ; && | ni redirection : les enchaînements sont refusés.
+Appelle \`gh\` par son nom, sans chemin complet. Si une commande est refusée, n'essaie pas de la
+contourner : note-la dans la PR (ou dans l'issue si tu ne peux pas ouvrir de PR).`;
 
 export function taskPrompt(id: string, agent: AgentConfig, issue: number, branch: string): string {
   return `Tu es l'agent ${id} (${agent.name}) du projet Heute.
