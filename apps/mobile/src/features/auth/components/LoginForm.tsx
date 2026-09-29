@@ -39,22 +39,31 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isLoading = auth.status === "loading";
-  const authError = auth.status === "error" ? auth.message : null;
-  const activeError = localError ?? authError;
+
+  const clearError = useCallback(() => {
+    setLocalError(null);
+    auth.onRetry?.();
+  }, [auth]);
 
   const togglePasswordVisibility = useCallback(() => {
     setIsPasswordVisible((prev) => !prev);
   }, []);
 
-  const handleEmailChange = useCallback((text: string) => {
-    setEmail(text);
-    setLocalError(null);
-  }, []);
+  const handleEmailChange = useCallback(
+    (text: string) => {
+      setEmail(text);
+      clearError();
+    },
+    [clearError],
+  );
 
-  const handlePasswordChange = useCallback((text: string) => {
-    setPassword(text);
-    setLocalError(null);
-  }, []);
+  const handlePasswordChange = useCallback(
+    (text: string) => {
+      setPassword(text);
+      clearError();
+    },
+    [clearError],
+  );
 
   const handleSubmit = useCallback(async () => {
     const trimmedEmail = email.trim();
@@ -63,7 +72,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
       return;
     }
 
-    setLocalError(null);
+    clearError();
     setIsSubmitting(true);
 
     try {
@@ -83,7 +92,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
     } finally {
       setIsSubmitting(false);
     }
-  }, [auth, email, password, onSuccess]);
+  }, [auth, clearError, email, password, onSuccess]);
 
   return (
     <KeyboardAvoidingView
@@ -102,13 +111,13 @@ export const LoginForm: React.FC<LoginFormProps> = ({
           <Text style={styles.subtitle}>{strings.auth.subtitle}</Text>
         </View>
 
-        {activeError ? (
+        {localError ? (
           <View style={styles.errorContainer}>
             <Banner
               testID="banner-auth-error"
               variant="danger"
-              text={activeError}
-              onClose={() => setLocalError(null)}
+              text={localError}
+              onClose={clearError}
             />
           </View>
         ) : null}

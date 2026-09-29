@@ -4,7 +4,6 @@ export const strings = {
     retry: "Erneut versuchen",
     undo: "Rückgängig",
     login: "Anmelden",
-    logout: "Abmelden",
     stand: "Stand",
     offline: "Offline",
     offlineStand: (time: string) => `Offline – Stand ${time}`,
@@ -36,10 +35,6 @@ export const strings = {
     nameLabel: "Name",
     roleLabel: "Rolle",
     departmentLabel: "Bereich",
-    notifications: "Benachrichtigungen",
-    notificationsAllowed: "Erlaubt",
-    notificationsBlocked: "Blockiert",
-    openSettings: "In Einstellungen öffnen",
     appVersion: "Version 0.1.0",
     logoutAction: "Abmelden",
     roles: {
