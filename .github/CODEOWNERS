@@ -1,0 +1,38 @@
+# Propriété des fichiers : PLAN.md §6.6.
+# Les agents (A, L, U) n'ont pas de compte GitHub : le propriétaire humain
+# relit pour tous. Le rôle de chaque chemin est indiqué en commentaire.
+
+# Par défaut (les dernières règles l'emportent) : orchestrateur
+* @Chamssidine
+
+# A : backend et admin
+/supabase/migrations/ @Chamssidine
+/supabase/tests/ @Chamssidine
+/supabase/seed.sql @Chamssidine
+/apps/admin/ @Chamssidine
+/packages/domain/src/codes/ @Chamssidine
+/packages/domain/src/labels/ @Chamssidine
+/packages/domain/src/validation/ @Chamssidine
+/packages/domain/src/errors/ @Chamssidine
+/packages/domain/src/roles/ @Chamssidine
+/packages/domain/src/database.types.ts @Chamssidine
+
+# L : logique mobile
+/packages/domain/src/time/ @Chamssidine
+/packages/domain/src/format/ @Chamssidine
+/apps/mobile/src/lib/ @Chamssidine
+/apps/mobile/src/features/ @Chamssidine
+/supabase/functions/notify/ @Chamssidine
+
+# U : UI mobile
+/apps/mobile/src/app/ @Chamssidine
+/apps/mobile/src/components/ui/ @Chamssidine
+/apps/mobile/src/strings/ @Chamssidine
+
+# Orchestrateur : racine, CI, contexte des agents, docs
+/.github/ @Chamssidine
+/docs/ @Chamssidine
+/AGENTS.md @Chamssidine
+/CLAUDE.md @Chamssidine
+/GEMINI.md @Chamssidine
+/PLAN.md @Chamssidine

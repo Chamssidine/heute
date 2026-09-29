@@ -1,0 +1,16 @@
+node_modules
+dist
+build
+.next
+.expo
+private
+package-lock.json
+PLAN.md
+road.md
+docs
+.github/ISSUE_TEMPLATE
+.github/pull_request_template.md
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+install.cmd
