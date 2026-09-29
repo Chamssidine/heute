@@ -112,11 +112,24 @@ export class Orchestrator {
     }
   }
 
+  // Called from the dashboard: errors that can be known up front go back to the click,
+  // the review itself then runs in the background.
+  startReview(prNumber: number, reviewerId: string): void {
+    if (this.reviewing !== undefined)
+      throw new Error(`Relecture de la PR #${this.reviewing} en cours`);
+    this.requirePr(prNumber);
+    if (!this.config.reviewers[reviewerId]) throw new Error(`Relecteur inconnu : ${reviewerId}`);
+    this.review(prNumber, reviewerId).catch((error: Error) =>
+      this.store.log("error", `Relecture PR #${prNumber} : ${error.message}`),
+    );
+  }
+
   async review(prNumber: number, reviewerId: string): Promise<void> {
     if (this.reviewing !== undefined)
       throw new Error(`Relecture de la PR #${this.reviewing} en cours`);
     const pr = this.requirePr(prNumber);
-    const agentId = this.requireAgentOf(pr);
+    // PRs opened outside an agent branch (orchestrator, human) are reviewed without a perimeter.
+    const agentId = agentOfBranch(this.config, pr.headRefName);
     const previous = this.store.data.reviews[String(prNumber)];
     const fixRounds = previous?.fixRounds ?? 0;
     this.reviewing = prNumber;
@@ -124,13 +137,16 @@ export class Orchestrator {
     try {
       await ensureWorktree(this.repoDir, this.config.reviewWorktree);
       await this.github.setLabels(prNumber, [STATUS_LABELS.review], this.labelsOn(pr));
+      const issue = this.issueOfBranch(pr.headRefName);
       const result = await reviewPullRequest({
         config: this.config,
         agentId,
         reviewerId,
         pr,
         files: await this.github.pullRequestFiles(prNumber),
-        issue: this.issueOfBranch(pr.headRefName),
+        issue,
+        diff: await this.github.pullRequestDiff(prNumber),
+        issueText: issue === undefined ? undefined : await this.github.issueText(issue),
         fixRoundsDone: fixRounds,
         logsDir: this.store.logsDir,
         onLine: (l) => this.store.pushLine("review", l),

@@ -4,7 +4,10 @@ const AUTONOMY = `Tu travailles sans humain : ne pose aucune question et n'atten
 En cas d'ambiguïté, choisis l'option la plus simple conforme aux règles, et note-la dans la PR.
 Lance une seule commande à la fois, sans ; && | ni redirection : les enchaînements sont refusés.
 Appelle \`gh\` par son nom, sans chemin complet. Si une commande est refusée, n'essaie pas de la
-contourner : note-la dans la PR (ou dans l'issue si tu ne peux pas ouvrir de PR).`;
+contourner : note-la dans la PR (ou dans l'issue si tu ne peux pas ouvrir de PR).
+Pour explorer le code, utilise tes outils de fichiers (lister un dossier, chercher, lire un fichier),
+jamais une commande shell (ls, dir, Get-ChildItem, cat, Get-Content, findstr) : elles sont refusées
+et un refus peut arrêter ton travail.`;
 
 export function taskPrompt(id: string, agent: AgentConfig, issue: number, branch: string): string {
   return `Tu es l'agent ${id} (${agent.name}) du projet Heute.
@@ -51,14 +54,14 @@ ${feedback}
 4. Arrête-toi. Ne merge jamais.`;
 }
 
-export function reviewPrompt(pr: number, issue: number | undefined): string {
-  return `Tu es le relecteur du projet Heute. Tu ne modifies rien.
-Relis la PR #${pr} : \`gh pr view ${pr}\` et \`gh pr diff ${pr}\`.${
-    issue
-      ? `\nCompare-la aux critères d'acceptation de l'issue #${issue} (\`gh issue view ${issue}\`).`
-      : ""
+export function reviewPrompt(pr: number, diffFile: string, issueFile: string | undefined): string {
+  return `Tu es le relecteur du projet Heute. Tu ne modifies rien et tu n'exécutes AUCUNE commande shell.
+Le dossier courant contient le code de la PR #${pr}. Lis avec tes outils de fichiers :
+- le diff de la PR : ${diffFile}${
+    issueFile ? `\n- l'issue et ses critères d'acceptation : ${issueFile}` : ""
   }
-Règles du projet : AGENTS.md. Vérifie : critères d'acceptation remplis, pas de secret,
+- AGENTS.md (règles du projet), et tout fichier du dépôt utile pour comprendre le contexte.
+Vérifie : critères d'acceptation remplis, pas de secret,
 pas de donnée réelle, pas de donnée de santé dans un push ou un log, pas de code inutile ou hors sujet.
 Ne commente pas le style si le lint passe.
 

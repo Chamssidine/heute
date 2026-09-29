@@ -69,6 +69,16 @@ export class GitHub {
     return (JSON.parse(out) as { files: { path: string }[] }).files.map((f) => f.path);
   }
 
+  async pullRequestDiff(pr: number): Promise<string> {
+    return this.run(["pr", "diff", String(pr)]);
+  }
+
+  async issueText(issue: number): Promise<string> {
+    const out = await this.run(["issue", "view", String(issue), "--json", "title,body"]);
+    const { title, body } = JSON.parse(out) as { title: string; body: string };
+    return `# #${issue} ${title}\n\n${body}\n`;
+  }
+
   async findPullRequest(branch: string): Promise<PullRequest | undefined> {
     return (await this.openPullRequests()).find((p) => p.headRefName === branch);
   }

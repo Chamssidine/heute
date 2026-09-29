@@ -87,7 +87,7 @@ export function startServer(port: number, orchestrator: Orchestrator, store: Sto
             await orchestrator.markDone(text("agent"));
             break;
           case "review":
-            void orchestrator.review(number, text("reviewer"));
+            orchestrator.startReview(number, text("reviewer"));
             break;
           case "sendback":
             await orchestrator.sendBack(number, text("note"));

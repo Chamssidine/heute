@@ -14,6 +14,14 @@ const github = new GitHub(config.gh, config.repo);
 const repoDir = fileURLToPath(new URL("../../..", import.meta.url));
 const orchestrator = new Orchestrator(config, github, store, repoDir);
 
+// Safety net: a background error is logged in the dashboard, it never stops the server.
+process.on("unhandledRejection", (reason) => {
+  store.log(
+    "error",
+    `Erreur non gérée : ${reason instanceof Error ? reason.message : String(reason)}`,
+  );
+});
+
 await github.ensureStatusLabels();
 await orchestrator.refresh();
 // ORCHESTRATOR_PORT lets a second instance run next to the usual one (e.g. to test a change).
