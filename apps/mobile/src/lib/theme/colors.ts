@@ -1,0 +1,68 @@
+export const colors = {
+  bg: "#F5F6F8",
+  surface: "#FFFFFF",
+  surfaceMuted: "#EEF0F3",
+  border: "#CDD2DA",
+  borderStrong: "#8A94A3",
+  text: "#111827",
+  textMuted: "#4B5563",
+  primary: "#1D4ED8",
+  onPrimary: "#FFFFFF",
+  primarySoft: "#DBEAFE",
+  onPrimarySoft: "#1E3A8A",
+  success: "#15803D",
+  successSoft: "#DCFCE7",
+  onSuccessSoft: "#14532D",
+  warning: "#B45309",
+  warningSoft: "#FEF3C7",
+  onWarningSoft: "#78350F",
+  danger: "#B91C1C",
+  dangerSoft: "#FEE2E2",
+  onDangerSoft: "#7F1D1D",
+  neutralSoft: "#E5E7EB",
+  onNeutralSoft: "#374151",
+  marker: "#FDE047",
+  onMarker: "#111827",
+  transparent: "transparent",
+} as const;
+
+export type ColorToken = keyof typeof colors;
+
+export const chipColors = {
+  dienst: { bg: colors.primarySoft, text: colors.onPrimarySoft },
+  teildienst: { bg: "#EDE9FE", text: "#4C1D95" },
+  seminar: { bg: "#CCFBF1", text: "#115E59" },
+  abwesend: { bg: colors.neutralSoft, text: colors.onNeutralSoft },
+  urlaub: { bg: colors.neutralSoft, text: colors.onNeutralSoft },
+  krank: { bg: colors.neutralSoft, text: colors.onNeutralSoft },
+  frei: { bg: colors.surfaceMuted, text: colors.textMuted, border: colors.border },
+  veg: { bg: colors.successSoft, text: colors.onSuccessSoft },
+  vegan: { bg: "#ECFCCB", text: "#365314" },
+  mos: { bg: colors.neutralSoft, text: "#1F2937" },
+  al: { bg: colors.dangerSoft, text: colors.onDangerSoft },
+  lp: { bg: "#FFEDD5", text: "#7C2D12" },
+  gr: { bg: colors.warningSoft, text: colors.onWarningSoft },
+  offen: { bg: colors.neutralSoft, text: colors.onNeutralSoft },
+  inArbeit: { bg: colors.warningSoft, text: colors.onWarningSoft },
+  erledigt: { bg: colors.successSoft, text: colors.onSuccessSoft },
+} as const;
+
+export type ChipVariant = keyof typeof chipColors;
+
+export const darkColors = {
+  bg: "#0F141A",
+  surface: "#171D25",
+  surfaceMuted: "#202833",
+  border: "#2E3846",
+  borderStrong: "#6B7686",
+  text: "#F2F4F7",
+  textMuted: "#A9B2C0",
+  primary: "#8AB4FF",
+  onPrimary: "#0B1220",
+  success: "#4ADE80",
+  warning: "#FBBF24",
+  danger: "#F87171",
+  marker: "#FDE047",
+  onMarker: "#111827",
+  transparent: "transparent",
+} as const;
