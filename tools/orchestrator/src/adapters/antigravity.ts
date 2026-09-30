@@ -1,3 +1,4 @@
+import { exec } from "../exec.ts";
 import { parseJson, withExtra, type CliAdapter, type CliSettings, type Role } from "./types.ts";
 
 function baseArgs(model: string, role: Role): string[] {
@@ -63,6 +64,16 @@ export const antigravity: CliAdapter = {
     },
   },
   limitArgs: (effort) => (effort ? ["--effort", effort] : []),
+  // `agy models` prints « id<TAB>label » lines after a « Fetching… » line.
+  async listModels(settings) {
+    const r = await exec(settings.command, ["models"], { timeoutMs: 30_000 });
+    if (r.code !== 0) throw new Error(`agy models : ${r.stderr.trim()}`);
+    return r.stdout
+      .split(/\r?\n/)
+      .map((l) => l.split("\t"))
+      .filter((p): p is [string, string] => p.length >= 2 && /^[\w.-]+$/.test(p[0] ?? ""))
+      .map(([id, label]) => ({ id: id.trim(), label: label.trim() }));
+  },
   summarize(line) {
     const e = parseJson(line);
     if (!e) return line.trim() ? line.trim().slice(0, 300) : undefined;

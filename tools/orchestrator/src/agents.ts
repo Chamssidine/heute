@@ -23,6 +23,8 @@ export interface BuildContext {
   clis: Record<string, unknown>;
   repoDir: string;
   briefExists: (path: string) => boolean;
+  // Models the chosen CLI offers; when known, nothing else is accepted.
+  models?: readonly string[];
 }
 
 const ID = /^[A-Za-z][A-Za-z0-9]{0,5}$/;
@@ -44,7 +46,11 @@ export function buildAgent(
   const name = spec.name?.trim() ?? "";
   if (name === "" || name.length > 40) errors.push("Nom : 1 à 40 caractères");
   if (!ctx.clis[spec.cli]) errors.push(`CLI inconnue : ${spec.cli}`);
-  if ((spec.model?.trim() ?? "") === "") errors.push("Modèle obligatoire");
+  const model = spec.model?.trim() ?? "";
+  if (model === "") errors.push("Modèle obligatoire");
+  else if (ctx.models && ctx.models.length > 0 && !ctx.models.includes(model)) {
+    errors.push(`Modèle « ${model} » non proposé par la CLI ${spec.cli}`);
+  }
 
   const brief = spec.brief?.trim() ?? "";
   if (!/^docs\/agents\/[\w.-]+\.md$/.test(brief) || !ctx.briefExists(brief)) {
