@@ -1,4 +1,4 @@
-import { brief, parseJson, withExtra, type CliAdapter, type UsageMetrics } from "./types.ts";
+import { brief, parseJson, withExtra, type CliAdapter } from "./types.ts";
 
 // Agents may edit files and run the project's own tools; merging stays with the human.
 const AGENT_TOOLS = [

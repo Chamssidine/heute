@@ -58,8 +58,8 @@ function parseVerdict(
   try {
     const parsed = JSON.parse(json);
     const result = validateReviewerResponse(parsed);
-    if (!result.valid) return undefined;
-    return { approve: result.approve!, comments: result.comments! };
+    if (!result.valid || result.approve === undefined || !result.comments) return undefined;
+    return { approve: result.approve, comments: result.comments };
   } catch {
     return undefined;
   }
