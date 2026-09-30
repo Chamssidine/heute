@@ -29,6 +29,8 @@ export interface RunRecord {
   startSha?: string;
   // Usage metrics (tokens, cost) from the LLM run.
   m?: UsageMetrics;
+  // Cumul USD dépensés sur cette tâche (toutes les runs + réparations).
+  cumulCostUsd?: number;
 }
 
 export interface ReviewRecord {
