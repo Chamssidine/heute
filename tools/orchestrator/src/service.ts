@@ -159,9 +159,15 @@ export class Orchestrator {
       const agent = this.config.agents[id];
       if (!agent) continue;
       try {
-        const status = await exec("git", ["status", "--porcelain"], { cwd: agent.worktree, timeoutMs: 20_000 });
+        const status = await exec("git", ["status", "--porcelain"], {
+          cwd: agent.worktree,
+          timeoutMs: 20_000,
+        });
         const changed = status.stdout.split(/\r?\n/).filter(Boolean).length;
-        const commits = await commitsAhead(agent.worktree, run.kind === "fix" ? (run.startSha ?? this.headRef(run.branch)) : this.baseRef());
+        const commits = await commitsAhead(
+          agent.worktree,
+          run.kind === "fix" ? (run.startSha ?? this.headRef(run.branch)) : this.baseRef(),
+        );
         this.work.set(id, { changed, commits });
       } catch {
         // The folder is being prepared or reset: try again next time.
@@ -1469,7 +1475,9 @@ export class Orchestrator {
         quotaUntil: activeQuota(this.store.data.quotaUntil?.[id]),
         run: current?.run,
         lines: live.liveLines[id] ?? [],
-        work: current ? { steps: this.steps.get(id) ?? 0, ...(this.work.get(id) ?? { changed: 0, commits: 0 }) } : undefined,
+        work: current
+          ? { steps: this.steps.get(id) ?? 0, ...(this.work.get(id) ?? { changed: 0, commits: 0 }) }
+          : undefined,
         queue: queueFor(a.label, live.issues, this.issuesWithOpenPr()).map((q) => ({
           number: q.issue.number,
           title: q.issue.title,
