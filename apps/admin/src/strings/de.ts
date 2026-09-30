@@ -59,6 +59,16 @@ export const de = {
     invalidRange: "Bitte gültige Zeiten im Format HH:MM angeben (Ende nach Beginn).",
     invalidSecondRange: "Bitte einen gültigen 2. Teil angeben (nach dem 1. Teil, Format HH:MM).",
     invalidBreak: "Die Pause muss eine ganze Zahl zwischen 0 und 240 sein.",
+    copyWeek: "Woche in die Folgewoche kopieren",
+    copyWeekConfirm: "Wirklich kopieren? Bereits belegte Tage der Folgewoche bleiben unverändert.",
+    copyWeekConfirmYes: "Ja, kopieren",
+    copyWeekNothing: "Diese Woche enthält keine Dienste zum Kopieren.",
+    copyWeekLoadError: "Die Dienste der Woche konnten nicht geladen werden.",
+    copyWeekDone: (copied: number, skipped: number) =>
+      `${copied} ${copied === 1 ? "Tag" : "Tage"} kopiert` +
+      (skipped > 0 ? `, ${skipped} bereits belegt und übersprungen.` : "."),
+    copyWeekFailed: (copied: number, failed: number, message: string) =>
+      `${copied} kopiert, ${failed} abgelehnt: ${message}`,
   },
   guests: {
     date: "Datum",
@@ -130,6 +140,15 @@ export const de = {
     loadError: "Der Speiseplan konnte nicht geladen werden. Bitte versuche es erneut.",
     forbidden: "Dir fehlt die Berechtigung, den Speiseplan zu ändern.",
     saveError: "Der Eintrag konnte nicht gespeichert werden. Bitte versuche es erneut.",
+    copyPrevious: "Vorwoche kopieren",
+    copyConfirm: "Menüs der Vorwoche übernehmen? Bereits ausgefüllte Felder bleiben unverändert.",
+    copyConfirmYes: "Ja, kopieren",
+    copyCancel: "Abbrechen",
+    copyNothing: "Die Vorwoche enthält keine Menüs zum Kopieren.",
+    copyLoadError: "Die Vorwoche konnte nicht geladen werden. Bitte versuche es erneut.",
+    copyDone: (days: number, skipped: number) =>
+      `${days} ${days === 1 ? "Tag" : "Tage"} kopiert` +
+      (skipped > 0 ? `, ${skipped} bereits ausgefüllte Felder übersprungen.` : "."),
   },
   auditLog: {
     from: "Von",

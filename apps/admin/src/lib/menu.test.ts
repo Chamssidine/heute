@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { currentWeekStart, isRlsDenied, menuRow, shiftWeek, weekDates } from "./menu.ts";
+import {
+  copiedDayCount,
+  currentWeekStart,
+  isRlsDenied,
+  menuKey,
+  menuRow,
+  planMenuCopy,
+  shiftWeek,
+  weekDates,
+} from "./menu.ts";
 
 test("currentWeekStart : lundi de la semaine, dimanche compris", () => {
   assert.equal(currentWeekStart(new Date(2026, 8, 30)), "2026-09-28");
@@ -34,6 +43,23 @@ test("menuRow : nettoie les espaces et met les champs vides à null", () => {
       dessert: "Obst",
     },
   );
+});
+
+test("planMenuCopy : copie la semaine précédente sans écraser les cases remplies", () => {
+  const dish = (mainDish: string) => ({ mainDish, vegVariant: "", dessert: "" });
+  const source = new Map([
+    [menuKey("2026-09-21", "mittag"), dish("Linsen")],
+    [menuKey("2026-09-21", "abend"), dish("Suppe")],
+    [menuKey("2026-09-27", "mittag"), dish("Nudeln")],
+  ]);
+  const target = new Map([[menuKey("2026-09-28", "abend"), dish("Brot")]]);
+  const plan = planMenuCopy(source, target, "2026-09-28");
+  assert.deepEqual(
+    plan.rows.map((r) => `${r.date}|${r.meal}|${r.main_dish}`),
+    ["2026-09-28|mittag|Linsen", "2026-10-04|mittag|Nudeln"],
+  );
+  assert.equal(plan.skipped, 1);
+  assert.equal(copiedDayCount(plan.rows), 2);
 });
 
 test("isRlsDenied : reconnaît le code 42501", () => {

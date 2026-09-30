@@ -57,6 +57,41 @@ export function menuRow(date: string, meal: MenuMeal, draft: MenuDraft) {
   };
 }
 
+export type MenuCopyPlan = {
+  rows: ReturnType<typeof menuRow>[];
+  skipped: number;
+};
+
+// Reprend les menus de la semaine précédente vers `weekStart`, sans toucher aux cases déjà remplies.
+export function planMenuCopy(
+  source: ReadonlyMap<string, MenuDraft>,
+  target: ReadonlyMap<string, MenuDraft>,
+  weekStart: string,
+): MenuCopyPlan {
+  const previousDates = weekDates(shiftWeek(weekStart, -1));
+  const rows: MenuCopyPlan["rows"] = [];
+  let skipped = 0;
+  weekDates(weekStart).forEach((date, i) => {
+    for (const meal of MENU_MEALS) {
+      const draft = source.get(menuKey(previousDates[i] ?? "", meal));
+      if (!draft) {
+        continue;
+      }
+      if (target.has(menuKey(date, meal))) {
+        skipped += 1;
+      } else {
+        rows.push(menuRow(date, meal, draft));
+      }
+    }
+  });
+  return { rows, skipped };
+}
+
+// Nombre de jours distincts couverts par les lignes copiées.
+export function copiedDayCount(rows: readonly { date: string }[]): number {
+  return new Set(rows.map((r) => r.date)).size;
+}
+
 export function isRlsDenied(error: { code?: string }): boolean {
   return error.code === RLS_DENIED_CODE;
 }

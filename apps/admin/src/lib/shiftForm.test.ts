@@ -1,6 +1,33 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { EMPTY_FORM, buildShiftArgs, parseTime, serverErrorMessage } from "./shiftForm.ts";
+import {
+  COPY_WEEK_REASON,
+  EMPTY_FORM,
+  buildShiftArgs,
+  parseTime,
+  planShiftCopy,
+  serverErrorMessage,
+} from "./shiftForm.ts";
+
+test("planShiftCopy : décale de 7 jours, ignore les jours déjà remplis", () => {
+  const base = { start2: null, end2: null, break_min: 30, note: null, type: "normal" } as const;
+  const plan = planShiftCopy(
+    [
+      { ...base, date: "2026-09-28", start1: 360, end1: 870 },
+      { ...base, date: "2026-09-29", start1: 360, end1: 870 },
+      { ...base, type: "frei", date: "2026-12-28", start1: null, end1: null },
+    ],
+    new Set(["2026-10-06"]),
+  );
+  assert.deepEqual(
+    plan.calls.map((c) => c.p_date),
+    ["2026-10-05", "2027-01-04"],
+  );
+  assert.equal(plan.skipped, 1);
+  assert.equal(plan.calls[0]?.p_reason, COPY_WEEK_REASON);
+  assert.equal(plan.calls[0]?.p_start1, 360);
+  assert.equal(plan.calls[1]?.p_type, "frei");
+});
 
 test("parseTime : HH:MM en minutes", () => {
   assert.equal(parseTime("06:30"), 390);
