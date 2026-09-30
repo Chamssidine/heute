@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { useTeamDay } from "./hooks.ts";
+import type { Database } from "@heute/domain";
+import { toViewState } from "../../lib/query/viewState.ts";
+import { fetchTeamDay, TEAM_ERROR_MESSAGES, type TeamSupabaseClient } from "./api.ts";
+import { formatStandBerlin, teamViewStateFromQuery, todayBerlin, useTeamDay } from "./hooks.ts";
 import {
   createTeamDay,
   formatTeamShiftHours,
@@ -13,6 +16,7 @@ import {
   teamDayFixture,
   toTeamShift,
   type RawTeamShift,
+  type TeamDay,
   type TeamShift,
 } from "./model.ts";
 
@@ -275,17 +279,147 @@ describe("features/team (P2-05 [L])", () => {
       }
     });
 
-    it("utilise par défaut la date de la fixture si aucun argument n'est fourni", () => {
-      const state = useTeamDay();
-      assert.equal(state.status, "success");
-      if (state.status === "success") {
-        assert.equal(state.data.date, "2026-09-30");
-      }
-    });
-
     it("renvoie un statut empty si la date demandée n'est pas celle de la fixture", () => {
       const state = useTeamDay("2026-10-01");
       assert.equal(state.status, "empty");
+    });
+
+    it("todayBerlin donne la date Europe/Berlin, pas celle de la fixture", () => {
+      // 2026-06-30 22:30 UTC = 2026-07-01 00:30 à Berlin (CEST)
+      assert.equal(todayBerlin(new Date("2026-06-30T22:30:00Z")), "2026-07-01");
+      assert.equal(todayBerlin(new Date("2026-12-15T12:00:00Z")), "2026-12-15");
+    });
+
+    it("formatStandBerlin donne HH:MM à Berlin", () => {
+      assert.equal(formatStandBerlin(Date.parse("2026-10-01T12:32:00Z")), "14:32");
+      assert.equal(formatStandBerlin(Date.parse("2026-12-15T23:05:00Z")), "00:05");
+    });
+  });
+
+  describe("teamViewStateFromQuery", () => {
+    const base = { isLoading: false, isPaused: false, dataUpdatedAt: 0, refetch: () => {} };
+    const day = createTeamDay("2026-10-01", RAW_TEAM_SHIFTS_FIXTURE);
+
+    it("loading", () => {
+      assert.equal(teamViewStateFromQuery({ ...base, isLoading: true }).status, "loading");
+    });
+
+    it("success avec Stand HH:MM = heure de la dernière réponse", () => {
+      const state = teamViewStateFromQuery({
+        ...base,
+        data: day,
+        dataUpdatedAt: Date.parse("2026-10-01T12:32:00Z"),
+      });
+      assert.equal(state.status, "success");
+      assert.equal(state.updatedAt, "14:32");
+    });
+
+    it("empty quand personne n'est rattaché à la journée", () => {
+      const state = teamViewStateFromQuery({ ...base, data: createTeamDay("2026-10-01", []) });
+      assert.equal(state.status, "empty");
+    });
+
+    it("offline avec données en cache quand la requête est en pause", () => {
+      const state = teamViewStateFromQuery({ ...base, data: day, isPaused: true });
+      assert.equal(state.status, "offline");
+    });
+
+    it("error avec retry", () => {
+      const state = teamViewStateFromQuery({
+        ...base,
+        error: new Error(TEAM_ERROR_MESSAGES.fetchFailed),
+      });
+      assert.equal(state.status, "error");
+      if (state.status === "error") {
+        assert.equal(state.message, TEAM_ERROR_MESSAGES.fetchFailed);
+      }
+    });
+  });
+
+  describe("api.ts - fetchTeamDay", () => {
+    function fakeClient(result: { data: unknown; error: unknown }) {
+      const calls: unknown[] = [];
+      const client = {
+        rpc: (fn: string, args: unknown) => {
+          calls.push([fn, args]);
+          return Promise.resolve(result);
+        },
+      } as unknown as TeamSupabaseClient;
+      return { client, calls };
+    }
+
+    it("appelle team_shifts(day) et transforme des lignes de la forme de database.types.ts", async () => {
+      const rows: Database["public"]["Functions"]["team_shifts"]["Returns"] = [
+        {
+          employee_id: "e1",
+          display_name: "Anna Beispiel",
+          department: "kueche",
+          type: "normal",
+          start1: 360,
+          end1: 870,
+          start2: 0,
+          end2: 0,
+        },
+        {
+          employee_id: "e2",
+          display_name: "Eva Muster",
+          department: "kueche",
+          type: "krank",
+          start1: 0,
+          end1: 0,
+          start2: 0,
+          end2: 0,
+        },
+        {
+          employee_id: "e3",
+          display_name: "Ben Muster",
+          department: "bfd",
+          type: "urlaub",
+          start1: 0,
+          end1: 0,
+          start2: 0,
+          end2: 0,
+        },
+      ];
+      const { client, calls } = fakeClient({ data: rows, error: null });
+
+      const day = await fetchTeamDay("2026-10-01", client);
+
+      assert.deepEqual(calls, [["team_shifts", { day: "2026-10-01" }]]);
+      assert.equal(day.date, "2026-10-01");
+      assert.equal(day.groups[0]?.shifts[0]?.hours, "06:00–14:30");
+      const nichtDa = day.groups[2]?.shifts ?? [];
+      assert.deepEqual(
+        nichtDa.map((s) => [s.name, s.label, s.hours]),
+        [
+          ["Ben Muster", "Abwesend", "Abwesend"],
+          ["Eva Muster", "Abwesend", "Abwesend"],
+        ],
+      );
+      const serialized = JSON.stringify(day).toLowerCase();
+      assert.equal(serialized.includes("krank"), false);
+      assert.equal(serialized.includes("urlaub"), false);
+    });
+
+    it("renvoie une erreur au message fixe, sans texte de la base", async () => {
+      const { client } = fakeClient({
+        data: null,
+        error: { code: "XX000", message: "krank: Eva Muster" },
+      });
+      await assert.rejects(
+        () => fetchTeamDay("2026-10-01", client),
+        (err: Error) => {
+          assert.equal(err.message, TEAM_ERROR_MESSAGES.fetchFailed);
+          return true;
+        },
+      );
+    });
+
+    it("signale une session invalide comme unauthorized", async () => {
+      const { client } = fakeClient({ data: null, error: { code: "PGRST301", message: "JWT" } });
+      const error = await fetchTeamDay("2026-10-01", client).catch((e: unknown) => e);
+      const state = toViewState<TeamDay>({ error });
+      assert.equal(state.status, "unauthorized");
     });
   });
 
