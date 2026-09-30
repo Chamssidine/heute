@@ -97,6 +97,9 @@ export function startServer(port: number, orchestrator: Orchestrator, store: Sto
           case "import":
             json(res, 200, { ok: true, added: await orchestrator.importTasks() });
             return;
+          case "suggest":
+            json(res, 200, { tasks: orchestrator.suggestTasks((body["paths"] as string[]) ?? []) });
+            return;
           case "createAgent":
             json(res, 200, {
               ok: true,

@@ -1928,29 +1928,87 @@
         );
       }
 
-      function taskChecklist(preselected = []) {
-        const tasks = assignableTasks();
-        const boxes = tasks.map((i) => {
-          const box = h("input", { type: "checkbox", value: String(i.number) });
-          box.checked = preselected.includes(i.number);
-          return h(
-            "label",
-            {},
-            box,
-            h(
-              "span",
-              {},
-              `#${i.number} ${i.title} `,
-              h("span", { class: "faint" }, i.agent ? `· agent ${i.agent}` : ""),
-            ),
-          );
+      // Ask the orchestrator which open tasks fit these paths (the human may not know).
+      async function suggestFor(paths) {
+        const res = await fetch("/api/actions/suggest", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-orchestrator": "1" },
+          body: JSON.stringify({ paths }),
         });
+        return res.ok ? (await res.json()).tasks : [];
+      }
+
+      const FIT = {
+        inside: ["ok", "dans son périmètre"],
+        partial: ["warn", "en partie"],
+        unknown: ["gray", "périmètre non indiqué"],
+        outside: ["gray", "hors périmètre"],
+      };
+
+      // A list of tasks to tick. `load(suggestions)` fills it with the best fits first, ticks the
+      // ones that are ready and inside the agent's perimeter, and says why each one is proposed.
+      function taskChecklist() {
+        const box = h("div", {});
+        let rows = [];
+        const render = (list, tickedNumbers) => {
+          rows = list.map((t) => {
+            const input = h("input", { type: "checkbox", value: String(t.number) });
+            input.checked = tickedNumbers.has(t.number);
+            const [tone, text] = FIT[t.fit] ?? FIT.unknown;
+            const label = h(
+              "label",
+              {},
+              input,
+              h(
+                "span",
+                {},
+                `#${t.number} ${t.title} `,
+                h("span", { class: `pill tone-${tone}`, style: "margin-left:4px" }, text),
+                t.ready
+                  ? null
+                  : h(
+                      "span",
+                      { class: "faint" },
+                      ` · attend ${t.waitingFor.map((n) => "#" + n).join(", ")}`,
+                    ),
+                t.agent
+                  ? h("span", { class: "faint" }, ` · aujourd'hui à l'agent ${t.agent}`)
+                  : null,
+              ),
+            );
+            return label;
+          });
+          box.replaceChildren(
+            rows.length
+              ? h("div", { class: "checklist" }, ...rows)
+              : h("div", { class: "small faint" }, "Aucune tâche ouverte à confier."),
+          );
+        };
+        const fallback = () =>
+          assignableTasks().map((i) => ({
+            number: i.number,
+            title: i.title,
+            fit: "unknown",
+            ready: true,
+            waitingFor: [],
+            agent: i.agent,
+          }));
+        render(fallback(), new Set());
         return {
-          node: boxes.length
-            ? h("div", { class: "checklist" }, ...boxes)
-            : h("div", { class: "small faint" }, "Aucune tâche ouverte à confier."),
+          node: box,
+          // Ticks what is worth giving: inside the perimeter and ready (at most five).
+          load(tasks) {
+            const ticked = new Set(
+              tasks
+                .filter((t) => t.fit === "inside" && t.ready)
+                .slice(0, 5)
+                .map((t) => t.number),
+            );
+            render(tasks, ticked);
+            return ticked.size;
+          },
           values: () =>
-            boxes.flatMap((label) => {
+            rows.flatMap((label) => {
               const input = label.querySelector("input");
               return input.checked ? [Number(input.value)] : [];
             }),
@@ -1959,6 +2017,7 @@
 
       function showAssign(agent) {
         const tasks = taskChecklist();
+        suggestFor(agent.allowedPaths).then((list) => tasks.load(list));
         openDialog({
           title: `Confier des tâches à l'agent ${agent.id}`,
           body: [
@@ -2029,6 +2088,30 @@
           placeholder: "1.5",
         });
         const tasks = taskChecklist();
+        const hint = h(
+          "div",
+          { class: "small faint" },
+          "Renseigne les chemins autorisés : les tâches qui correspondent sont proposées et cochées.",
+        );
+        const currentPaths = () =>
+          paths.value
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter(Boolean);
+        let timer;
+        const refreshSuggestions = () => {
+          clearTimeout(timer);
+          timer = setTimeout(async () => {
+            const list = await suggestFor(currentPaths());
+            const n = tasks.load(list);
+            hint.textContent = currentPaths().length
+              ? n > 0
+                ? `${n} tâche(s) prête(s) dans ce périmètre sont cochées : décoche celles que tu ne veux pas.`
+                : "Aucune tâche prête dans ce périmètre pour l'instant : élargis les chemins ou coche à la main."
+              : "Renseigne les chemins autorisés : les tâches qui correspondent sont proposées et cochées.";
+          }, 350);
+        };
+        paths.addEventListener("input", refreshSuggestions);
 
         templateSelect.addEventListener("change", () => {
           const t = agentById(templateSelect.value);
@@ -2037,6 +2120,7 @@
           model.value = t.model;
           brief.value = t.brief;
           paths.value = t.allowedPaths.join("\n");
+          refreshSuggestions();
         });
 
         openDialog({
@@ -2069,7 +2153,8 @@
                 field("Effort", effort),
                 field("Budget par tâche ($)", budget),
               ),
-              field("Tâches à lui confier", tasks.node, "optionnel"),
+              field("Tâches à lui confier", tasks.node, "proposées selon le périmètre"),
+              hint,
             ),
           ],
           actions: [

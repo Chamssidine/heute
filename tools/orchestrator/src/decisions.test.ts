@@ -9,6 +9,8 @@ import {
   parseDependencies,
   queueFor,
   quotaResetDelayMs,
+  taskFit,
+  taskPaths,
   type IssueSummary,
   type ReviewInput,
 } from "./decisions.ts";
@@ -148,4 +150,23 @@ test("quota: Claude's session limit message is recognised, with its reset hour",
   const delay = quotaResetDelayMs("You've hit your session limit · resets 4pm (Asia/Baghdad)");
   assert.ok(delay !== undefined && delay > 0 && delay <= 24 * 3600_000);
   assert.equal(quotaResetDelayMs("tout va bien"), undefined);
+});
+
+test("tasks: the paths an issue writes to are read from « Modifier uniquement »", () => {
+  const body =
+    "**Agent** : U\n**Modifier uniquement** : `apps/mobile/src/app/**`, `apps/mobile/src/strings/**`\n**Valider** : x";
+  assert.deepEqual(taskPaths(body), ["apps/mobile/src/app/**", "apps/mobile/src/strings/**"]);
+  assert.deepEqual(taskPaths("pas de périmètre"), []);
+});
+
+test("tasks: fit of a task with an agent's perimeter (inside, partial, outside, unknown)", () => {
+  const ui = ["apps/mobile/src/app/**", "apps/mobile/src/strings/**"];
+  assert.equal(taskFit(["apps/mobile/src/app/**", "apps/mobile/src/strings/**"], ui), "inside");
+  assert.equal(taskFit(["apps/mobile/src/app/(tabs)/kueche.tsx"], ui), "inside");
+  assert.equal(
+    taskFit(["apps/mobile/src/app/**", "apps/mobile/src/features/kitchen/components/**"], ui),
+    "partial",
+  );
+  assert.equal(taskFit(["apps/admin/**"], ui), "outside");
+  assert.equal(taskFit([], ui), "unknown");
 });
