@@ -1,9 +1,48 @@
 // Every action that launches an agent or merges code is triggered by the human from the
 // dashboard. The service only prepares, runs what was asked, and reviews read-only.
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { adapterFor } from "./adapters/index.ts";
 import { agentOfBranch, type Config } from "./config.ts";
-import { isManualRunDone, nextIssue, queueFor, STATUS_LABELS } from "./decisions.ts";
+
+const GENERATED_FILE_PATTERNS = [
+  "package-lock.json",
+  "packages/domain/src/database.types.ts",
+  "pnpm-lock.yaml",
+];
+
+function filterDiff(rawDiff: string): string {
+  const lines = rawDiff.split("\n");
+  const result: string[] = [];
+  let inExcludedFile = false;
+
+  for (const line of lines) {
+    if (line.startsWith("diff --git")) {
+      const match = line.match(/a\/(.+?)\s+b\/(.+?)$/);
+      const filepath = match?.[1] ?? match?.[2];
+      inExcludedFile = !!filepath && GENERATED_FILE_PATTERNS.some((p) => filepath.includes(p));
+
+      if (inExcludedFile) {
+        const path = filepath || "file";
+        result.push(`--- ${path}: (fichier généré, exclu du diff)`);
+      } else {
+        result.push(line);
+      }
+    } else if (!inExcludedFile) {
+      result.push(line);
+    }
+  }
+
+  return result.join("\n");
+}
+import {
+  isManualRunDone,
+  nextIssue,
+  pickReviewerId,
+  queueFor,
+  quotaResetDelayMs,
+  STATUS_LABELS,
+} from "./decisions.ts";
 import type { GitHub, PullRequest } from "./github.ts";
 import { fixPrompt, taskPrompt } from "./prompts.ts";
 import { reviewComment, reviewPullRequest } from "./review.ts";
@@ -17,6 +56,27 @@ import {
 } from "./worktree.ts";
 
 const ALL_STATUS = Object.values(STATUS_LABELS);
+
+// End of a run's log: provider errors (quota, rate limit) are printed last.
+function logTail(file: string): string {
+  try {
+    return readFileSync(file, "utf8").slice(-6000);
+  } catch {
+    return "";
+  }
+}
+
+function activeQuota(until: string | undefined): string | undefined {
+  return until && Date.parse(until) > Date.now() ? until : undefined;
+}
+
+function clock(iso: string): string {
+  return new Date(iso).toLocaleTimeString("de-DE", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Berlin",
+  });
+}
 const TOOL_NAMES: Record<string, string> = {
   claude: "Claude Code",
   antigravity: "Antigravity CLI",
@@ -32,6 +92,8 @@ export class Orchestrator {
   // `handle` is absent for manual runs: nothing runs on this machine.
   private readonly running = new Map<string, { run: RunRecord; handle?: RunHandle }>();
   private reviewing: number | undefined;
+  private readonly reviewQueue: { pr: number; reviewer: string }[] = [];
+  private readonly interrupted: RunRecord[] = [];
 
   constructor(config: Config, github: GitHub, store: Store, repoDir: string) {
     this.config = config;
@@ -45,9 +107,23 @@ export class Orchestrator {
       } else {
         run.endedAt = new Date().toISOString();
         run.result = "interrompu (orchestrateur redémarré)";
+        this.interrupted.push(run);
       }
     }
     store.save();
+  }
+
+  // Runs cut by a restart left « en-cours » on their issue or PR: the task would then look
+  // taken forever and never be offered again. Their pushed work is resumed on the next launch.
+  async releaseInterruptedRuns(): Promise<void> {
+    for (const run of this.interrupted.splice(0)) {
+      const target = run.kind === "fix" && run.pr !== undefined ? run.pr : run.issue;
+      await this.github.setLabels(target, [], [STATUS_LABELS.running]);
+      this.store.log(
+        "warn",
+        `Run de ${run.agent} sur #${target} coupé par le redémarrage : tâche libérée, le travail poussé sera repris`,
+      );
+    }
   }
 
   async refresh(): Promise<void> {
@@ -64,6 +140,7 @@ export class Orchestrator {
   async launch(agentId: string): Promise<void> {
     const agent = this.requireAgent(agentId);
     if (this.running.has(agentId)) throw new Error(`L'agent ${agentId} travaille déjà`);
+    this.assertQuotaAvailable(agentId);
     await this.refresh();
     const issue = nextIssue(agent.label, this.store.live.issues, this.issuesWithOpenPr());
     if (!issue) throw new Error(`Aucune tâche prête pour l'agent ${agentId}`);
@@ -93,6 +170,7 @@ export class Orchestrator {
     const agentId = this.requireAgentOf(pr);
     const agent = this.requireAgent(agentId);
     if (this.running.has(agentId)) throw new Error(`L'agent ${agentId} travaille déjà`);
+    this.assertQuotaAvailable(agentId);
     const review = this.store.data.reviews[String(prNumber)];
     const feedback =
       [
@@ -133,8 +211,6 @@ export class Orchestrator {
   // Called from the dashboard: errors that can be known up front go back to the click,
   // the review itself then runs in the background.
   startReview(prNumber: number, reviewerId: string): void {
-    if (this.reviewing !== undefined)
-      throw new Error(`Relecture de la PR #${this.reviewing} en cours`);
     this.requirePr(prNumber);
     if (!this.config.reviewers[reviewerId]) throw new Error(`Relecteur inconnu : ${reviewerId}`);
     this.review(prNumber, reviewerId).catch((error: Error) =>
@@ -142,9 +218,17 @@ export class Orchestrator {
     );
   }
 
+  // One review at a time (they share the review worktree): the others wait their turn.
+  // Dropping them made a fixed PR keep its old « à corriger » verdict.
   async review(prNumber: number, reviewerId: string): Promise<void> {
-    if (this.reviewing !== undefined)
-      throw new Error(`Relecture de la PR #${this.reviewing} en cours`);
+    if (this.reviewing !== undefined) {
+      const queued = this.reviewQueue.some((q) => q.pr === prNumber);
+      if (this.reviewing !== prNumber && !queued) {
+        this.reviewQueue.push({ pr: prNumber, reviewer: reviewerId });
+        this.store.log("info", `Relecture de la PR #${prNumber} mise en file`);
+      }
+      return;
+    }
     const pr = this.requirePr(prNumber);
     // PRs opened outside an agent branch (orchestrator, human) are reviewed without a perimeter.
     const agentId = agentOfBranch(this.config, pr.headRefName);
@@ -156,14 +240,29 @@ export class Orchestrator {
       await ensureWorktree(this.repoDir, this.config.reviewWorktree);
       await this.github.setLabels(prNumber, [STATUS_LABELS.review], this.labelsOn(pr));
       const issue = this.issueOfBranch(pr.headRefName);
+      const files = await this.github.pullRequestFiles(prNumber);
+      const rawDiff = await this.github.pullRequestDiff(prNumber);
+
+      // Dynamically pick the best reviewer if this is a default review.
+      let effectiveReviewerId = reviewerId;
+      if (reviewerId === this.config.defaultReviewer) {
+        const diffLines = (rawDiff.match(/\n/g) ?? []).length;
+        effectiveReviewerId = pickReviewerId({
+          files,
+          diffLines,
+          contractPaths: this.config.contractPaths,
+          fixRounds,
+        });
+      }
+
       const result = await reviewPullRequest({
         config: this.config,
         agentId,
-        reviewerId,
+        reviewerId: effectiveReviewerId,
         pr,
-        files: await this.github.pullRequestFiles(prNumber),
+        files,
         issue,
-        diff: await this.github.pullRequestDiff(prNumber),
+        diff: filterDiff(rawDiff),
         issueText: issue === undefined ? undefined : await this.github.issueText(issue),
         fixRoundsDone: fixRounds,
         logsDir: this.store.logsDir,
@@ -174,25 +273,38 @@ export class Orchestrator {
         human: STATUS_LABELS.human,
         changes: STATUS_LABELS.changes,
       }[result.outcome];
-      await this.github.comment(prNumber, reviewComment(reviewerId, result));
+      await this.github.comment(prNumber, reviewComment(effectiveReviewerId, result));
       await this.github.setLabels(prNumber, [label], [STATUS_LABELS.review]);
       this.store.data.reviews[String(prNumber)] = {
         pr: prNumber,
         outcome: result.outcome,
-        reviewer: reviewerId,
+        reviewer: effectiveReviewerId,
         reasons: result.reasons,
         reviewerComments: result.reviewerComments,
         at: new Date().toISOString(),
         fixRounds,
       };
-      this.store.log("info", `PR #${prNumber} relue par ${reviewerId} : ${result.outcome}`);
+      this.store.log("info", `PR #${prNumber} relue par ${effectiveReviewerId} : ${result.outcome}`);
     } catch (error) {
       this.store.log("error", `Relecture PR #${prNumber} : ${(error as Error).message}`);
     } finally {
       this.reviewing = undefined;
       this.store.setActivity(undefined);
       await this.refresh().catch(() => undefined);
+      this.startNextQueuedReview();
     }
+  }
+
+  private startNextQueuedReview(): void {
+    const next = this.reviewQueue.shift();
+    if (!next) return;
+    if (!this.store.live.prs.some((p) => p.number === next.pr)) {
+      this.startNextQueuedReview(); // merged or closed meanwhile
+      return;
+    }
+    this.review(next.pr, next.reviewer).catch((error: Error) =>
+      this.store.log("error", `Relecture PR #${next.pr} : ${error.message}`),
+    );
   }
 
   async merge(prNumber: number): Promise<void> {
@@ -293,6 +405,11 @@ export class Orchestrator {
     run.endedAt = new Date().toISOString();
     run.exitCode = code;
     try {
+      const quotaDelay = quotaResetDelayMs(logTail(run.logFile));
+      if (quotaDelay !== undefined) {
+        await this.pauseForQuota(run, quotaDelay);
+        return;
+      }
       const pr = await this.github.findPullRequest(run.branch);
       if (run.kind === "task") await this.github.setLabels(run.issue, [], [STATUS_LABELS.running]);
       if (!pr) {
@@ -318,6 +435,30 @@ export class Orchestrator {
       this.store.log("error", `Fin de l'agent ${run.agent} : ${(error as Error).message}`);
     } finally {
       this.store.save();
+    }
+  }
+
+  // A run stopped by the LLM provider's quota is not a failed task: release it (no « bloquée »,
+  // a correction goes back to « à corriger ») and refuse new runs for this agent until the reset.
+  private async pauseForQuota(run: RunRecord, delayMs: number): Promise<void> {
+    const until = new Date(Date.now() + delayMs).toISOString();
+    (this.store.data.quotaUntil ??= {})[run.agent] = until;
+    run.result = "quota épuisé";
+    if (run.kind === "task") {
+      await this.github.setLabels(run.issue, [], [STATUS_LABELS.running]);
+    } else if (run.pr !== undefined) {
+      await this.github.setLabels(run.pr, [STATUS_LABELS.changes], [STATUS_LABELS.running]);
+    }
+    this.store.log(
+      "warn",
+      `Quota épuisé pour l'agent ${run.agent} : #${run.pr ?? run.issue} libérée, relance possible vers ${clock(until)}`,
+    );
+  }
+
+  private assertQuotaAvailable(agentId: string): void {
+    const until = this.store.data.quotaUntil?.[agentId];
+    if (until && Date.parse(until) > Date.now()) {
+      throw new Error(`Quota de l'agent ${agentId} épuisé : relance possible vers ${clock(until)}`);
     }
   }
 
@@ -379,6 +520,7 @@ export class Orchestrator {
         manual: adapter.mode === "manual",
         model: a.model,
         verified: adapter.verified,
+        quotaUntil: activeQuota(this.store.data.quotaUntil?.[id]),
         run: current?.run,
         lines: live.liveLines[id] ?? [],
         queue: queueFor(a.label, live.issues, this.issuesWithOpenPr()).map((q) => ({

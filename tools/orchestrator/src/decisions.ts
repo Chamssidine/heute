@@ -67,6 +67,31 @@ export function nextIssue(
 
 export type ReviewOutcome = "ready" | "human" | "changes";
 
+export type ErrorCode =
+  | "SCOPE_VIOLATION"
+  | "CONTRACT_CHANGE"
+  | "TYPECHECK_FAIL"
+  | "LINT_FAIL"
+  | "TEST_FAIL"
+  | "REVIEW_REJECT"
+  | "NO_VERDICT"
+  | "CMD_REFUSED"
+  | "SECURITY_CONCERN";
+
+// Limites de réparation automatique par type d'erreur.
+// Au-delà : attente humaine, pas de relecture ni correction auto.
+export const ERROR_FIX_LIMITS: Record<ErrorCode, number> = {
+  SCOPE_VIOLATION: 1,
+  CONTRACT_CHANGE: 0,
+  TYPECHECK_FAIL: 3,
+  LINT_FAIL: 3,
+  TEST_FAIL: 3,
+  REVIEW_REJECT: 2,
+  NO_VERDICT: 1,
+  CMD_REFUSED: 3,
+  SECURITY_CONCERN: 0,
+};
+
 export interface ReviewInput {
   files: readonly string[];
   allowedPaths: readonly string[];
@@ -75,11 +100,13 @@ export interface ReviewInput {
   reviewerApproved: boolean;
   fixRoundsDone: number;
   maxFixRounds: number;
+  errorCode?: ErrorCode;
 }
 
 export interface ReviewDecision {
   outcome: ReviewOutcome;
   reasons: string[];
+  errorCode?: ErrorCode;
 }
 
 export function decideReview(input: ReviewInput): ReviewDecision {
@@ -96,13 +123,23 @@ export function decideReview(input: ReviewInput): ReviewDecision {
   }
 
   if (reasons.length > 0) {
-    if (input.fixRoundsDone >= input.maxFixRounds) {
+    // Vérifier la limite de réparation si un code d'erreur est défini
+    if (input.errorCode) {
+      const limit = ERROR_FIX_LIMITS[input.errorCode];
+      if (input.fixRoundsDone >= limit) {
+        return {
+          outcome: "human",
+          reasons: [...reasons, `Limite de réparation pour ${input.errorCode} atteinte`],
+          errorCode: input.errorCode,
+        };
+      }
+    } else if (input.fixRoundsDone >= input.maxFixRounds) {
       return {
         outcome: "human",
         reasons: [...reasons, "Nombre maximal de corrections atteint"],
       };
     }
-    return { outcome: "changes", reasons };
+    return { outcome: "changes", reasons, errorCode: input.errorCode };
   }
 
   const contract = input.files.filter((f) => matchesAny(f, input.contractPaths));
@@ -110,6 +147,7 @@ export function decideReview(input: ReviewInput): ReviewDecision {
     return {
       outcome: "human",
       reasons: [`Contrat modifié : ${contract.join(", ")}`],
+      errorCode: "CONTRACT_CHANGE",
     };
   }
   return { outcome: "ready", reasons: ["Toutes les vérifications passent : prête à merger"] };
@@ -124,4 +162,36 @@ export function isManualRunDone(
   const pr = prs.find((p) => p.headRefName === run.branch);
   if (!pr) return false;
   return run.kind === "task" || pr.headRefOid !== run.startSha;
+}
+
+const QUOTA_ERROR = /RESOURCE_EXHAUSTED|quota (?:reached|exceeded)|usage limit reached/i;
+const DEFAULT_QUOTA_WAIT_MS = 60 * 60_000;
+
+// End of a run's log → how long until the provider's quota resets, or undefined when the
+// run did not stop on a quota. Reads « Resets in 2h18m58s » when the provider gives it.
+export function quotaResetDelayMs(logTail: string): number | undefined {
+  if (!QUOTA_ERROR.test(logTail)) return undefined;
+  const reset = logTail.match(/Resets? in\s*(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?/i);
+  const [hours, minutes, seconds] = [reset?.[1], reset?.[2], reset?.[3]].map((v) => Number(v ?? 0));
+  const delay = ((hours ?? 0) * 3600 + (minutes ?? 0) * 60 + (seconds ?? 0)) * 1000;
+  return delay > 0 ? delay : DEFAULT_QUOTA_WAIT_MS;
+}
+
+// Pick the best reviewer based on diff complexity and PR type.
+// - Small diffs (<80 lines) → haiku (fast, cheap)
+// - Contract changes or security concerns → opus (most careful)
+// - Fix round >= 2 → opus (harder problems)
+// - Default → sonnet (good balance)
+export interface ReviewerPickInput {
+  files: readonly string[];
+  diffLines: number;
+  contractPaths: readonly string[];
+  fixRounds: number;
+}
+
+export function pickReviewerId(input: ReviewerPickInput): "claude" | "codex" | "gemini" {
+  const hasContract = input.files.some((f) => matchesAny(f, input.contractPaths));
+  if (hasContract || input.fixRounds >= 2) return "claude"; // opus
+  if (input.diffLines < 80) return "codex"; // haiku (or similar small model if available)
+  return "claude"; // sonnet (default)
 }

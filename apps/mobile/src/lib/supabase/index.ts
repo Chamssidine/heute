@@ -1,20 +1,53 @@
-import { AppState, type AppStateStatus } from "react-native";
-import * as SecureStore from "expo-secure-store";
+import type { Database } from "@heute/domain";
 import { createClient } from "@supabase/supabase-js";
+
+const memoryStorage = new Map<string, string>();
+
+let secureStoreModule: {
+  getItemAsync: (key: string) => Promise<string | null>;
+  setItemAsync: (key: string, value: string) => Promise<void>;
+  deleteItemAsync: (key: string) => Promise<void>;
+} | null = null;
+
+async function getSecureStore() {
+  if (secureStoreModule) return secureStoreModule;
+  if (typeof process === "undefined" || !process.versions?.node) {
+    try {
+      secureStoreModule = await import("expo-secure-store");
+      return secureStoreModule;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 
 /**
  * Adaptateur de stockage sécurisé pour React Native / Expo utilisant SecureStore.
  * Conforme aux recommandations de la documentation Supabase pour Expo.
+ * Utilise un stockage mémoire de repli en environnement de test Node.
  */
 export const ExpoSecureStoreAdapter = {
-  getItem: (key: string): Promise<string | null> => {
-    return SecureStore.getItemAsync(key);
+  getItem: async (key: string): Promise<string | null> => {
+    const store = await getSecureStore();
+    if (store?.getItemAsync) {
+      return store.getItemAsync(key);
+    }
+    return memoryStorage.get(key) ?? null;
   },
-  setItem: (key: string, value: string): Promise<void> => {
-    return SecureStore.setItemAsync(key, value);
+  setItem: async (key: string, value: string): Promise<void> => {
+    const store = await getSecureStore();
+    if (store?.setItemAsync) {
+      return store.setItemAsync(key, value);
+    }
+    memoryStorage.set(key, value);
   },
-  removeItem: (key: string): Promise<void> => {
-    return SecureStore.deleteItemAsync(key);
+  removeItem: async (key: string): Promise<void> => {
+    const store = await getSecureStore();
+    if (store?.deleteItemAsync) {
+      return store.deleteItemAsync(key);
+    }
+    memoryStorage.delete(key);
   },
 };
 
@@ -48,12 +81,31 @@ export const fetchWithTimeout: typeof fetch = (input, init) => {
 };
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321";
-const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_KEY ?? "";
+const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_KEY || "sb-anon-key-local";
+
+export type AppStateStatus = "active" | "background" | "inactive" | "unknown" | "extension";
+
+/**
+ * Configure l'écouteur du cycle de vie AppState pour le rafraîchissement des tokens d'authentification.
+ */
+export function setupSupabaseAppState(appState?: {
+  addEventListener: (type: "change", listener: (state: AppStateStatus) => void) => unknown;
+}): void {
+  if (typeof appState?.addEventListener === "function") {
+    appState.addEventListener("change", (state: AppStateStatus) => {
+      if (state === "active") {
+        supabase.auth.startAutoRefresh();
+      } else {
+        supabase.auth.stopAutoRefresh();
+      }
+    });
+  }
+}
 
 /**
  * Client Supabase unique pour l'application mobile.
  */
-export const supabase = createClient(supabaseUrl, supabaseKey, {
+export const supabase = createClient<Database>(supabaseUrl, supabaseKey, {
   auth: {
     storage: ExpoSecureStoreAdapter,
     autoRefreshToken: true,
@@ -65,13 +117,13 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
   },
 });
 
-// Rafraîchissement automatique du token lié au cycle de vie de l'application (AppState)
-if (typeof AppState?.addEventListener === "function") {
-  AppState.addEventListener("change", (state: AppStateStatus) => {
-    if (state === "active") {
-      supabase.auth.startAutoRefresh();
-    } else {
-      supabase.auth.stopAutoRefresh();
-    }
-  });
+// Rafraîchissement automatique du token lié au cycle de vie de l'application en environnement React Native
+if (typeof process === "undefined" || !process.versions?.node) {
+  import("react-native")
+    .then(({ AppState }) => {
+      setupSupabaseAppState(AppState);
+    })
+    .catch(() => {
+      // Ignoré hors environnement React Native
+    });
 }

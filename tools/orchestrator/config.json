@@ -23,7 +23,7 @@
     },
     "codex": {
       "adapter": "codex",
-      "command": "codex"
+      "command": "C:\\Users\\chams\\AppData\\Local\\OpenAI\\Codex\\bin\\fd4c151a749f3ab4\\codex.exe"
     }
   },
   "reviewers": {

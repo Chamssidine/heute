@@ -1,0 +1,176 @@
+{
+  "name": "HeuteTokenPlan",
+  "v": 1,
+  "ref": "AgentProtocol/v3",
+  "date": "2026-09-30",
+  "updated": "2026-09-30",
+  "verdict": "live_partial",
+  "status": {
+    "summary": "K1-K9 ont des PR mergées (#67, #68, #69, #70, #71, #72, #73), mais plusieurs livraisons restent partielles par rapport au plan initial.",
+    "merged_prs": {
+      "K1": 67,
+      "K2": 68,
+      "K3": 68,
+      "K4": 69,
+      "K5": 70,
+      "K6": 72,
+      "K7": 73,
+      "K8": 71,
+      "K9": 71
+    },
+    "next": [
+      "Brancher l'affichage tableau de bord des métriques tokens/coûts.",
+      "Transformer le cumul coût par tâche en garde bloquant à 1,5 USD.",
+      "Lire l'enveloppe JSON de fin de run agent au lieu de la demander seulement dans le prompt.",
+      "Aligner le routage relecteur avec des modèles réellement configurés, ou ajuster le plan si codex remplace haiku."
+    ]
+  },
+
+  "baseline": {
+    "src": ".state/logs/U-1790719165258.log",
+    "cli": "claude",
+    "model": "claude-sonnet-5-5",
+    "turns": 45,
+    "cache_read": 1191193,
+    "usd": 0.59,
+    "protocol_overhead": "<0.1% (prompt ~600 tokens)",
+    "cost_driver": "exploration de l'agent dans la CLI (tours), pas le protocole"
+  },
+
+  "audit": [
+    { "rule": "orchestrator_controls_flow", "st": "ok", "now": "service.ts + labels GitHub = FSM ; les agents ne routent rien" },
+    { "rule": "deterministic_first", "st": "ok", "now": "périmètre puis typecheck/lint/test avant tout appel au relecteur (review.ts)" },
+    { "rule": "tests_must_run_before_success", "st": "ok", "now": "l'orchestrateur relance les validations dans heute-review" },
+    { "rule": "tester", "st": "ok", "now": "scripts npm déterministes : 0 token, mieux qu'un tester LLM" },
+    { "rule": "no_raw_history", "st": "ok", "now": "session neuve par run ; la correction reçoit seulement la liste des retours" },
+    { "rule": "security", "st": "ok", "now": "allowedPaths vérifiés, outils limités (allowedTools, settings agy), aucun secret" },
+    { "rule": "large_content=ArtifactStore+IDs", "st": "partial", "now": "diff et issue passés en fichiers au relecteur", "gap": "diff complet, lockfile et types générés compris" },
+    { "rule": "agent->agent=JSON", "st": "partial", "now": "verdict du relecteur en JSON", "gap": "fin de run d'agent = prose ; l'état est déduit de GitHub" },
+    { "rule": "schema_validate_all_messages", "st": "partial", "now": "parseVerdict vérifie seulement approve:boolean", "gap": "pas de schéma ; claude --json-schema inutilisé" },
+    { "rule": "short_stable_codes", "st": "missing", "now": "raisons = phrases en français" },
+    { "rule": "repair.limits", "st": "partial", "now": "MAX_FIX_ROUNDS=2 global puis humain", "gap": "pas de limite par code" },
+    { "rule": "routing", "st": "missing", "now": "modèle fixe par agent ; relecteur toujours Opus" },
+    { "rule": "token_manager", "st": "missing", "now": "seule limite : timeout 45 min", "gap": "--effort et --max-budget-usd inutilisés" },
+    { "rule": "observability", "st": "missing", "now": "usage et coût présents dans les logs bruts", "gap": "ni parsés, ni stockés, ni affichés" },
+    { "rule": "cost_guard", "st": "missing", "now": "aucun cumul par tâche" },
+    { "rule": "context_policy", "st": "partial", "now": "AGENTS.md ≤ 6000 car., brief + issue, règle « fichiers cités »", "gap": "les issues ne listent pas toujours les fichiers ; ordre du prompt : variables avant règles fixes" },
+    { "rule": "idempotency", "st": "partial", "now": "issuesWithOpenPr, reprise depuis la branche distante, un run par agent" }
+  ],
+
+  "adapt": [
+    { "rule": "artifact_store(sha256)", "d": "git", "why": "SHA de commit et de blob = versions immuables adressées par hash ; aucun nouveau stockage" },
+    { "rule": "schema_registry", "d": "un fichier src/schemas.ts", "why": "3 messages seulement ; pas de service dédié" },
+    { "rule": "context_compiler", "d": "issue structurée + prompt « lis seulement »", "why": "les agents CLI font leur propre lecture ; assembler le contexte exige des agents API (réécriture)" },
+    { "rule": "agent->human", "d": "PR et commentaires restent en prose française", "why": "c'est l'humain qui les lit ; JSON seulement pour ce que lit la machine" },
+    { "rule": "reviewer=haiku", "d": "sonnet par défaut, opus si contrat/sécurité/repair>=2, haiku si petit diff", "why": "le relecteur contrôle santé/secrets/RLS : haiku seul est trop faible" },
+    { "rule": "model_downgrade", "d": "non", "why": "une CLI ne change pas de modèle en cours de run ; --fallback-model = surcharge seulement" }
+  ],
+
+  "steps": [
+    {
+      "id": "K1", "p": 1, "t": "observabilité",
+      "st": "partial",
+      "pr": 67,
+      "delivered": "usage Claude parsé et stocké dans RunRecord.m ; champs de coût/tokens disponibles dans l'état",
+      "remaining": "afficher tokens et coût dans public/index.html ; couvrir agy/codex si leurs flux exposent l'usage",
+      "do": "adapter.usage(stdout) -> {in,out,cr,cw,usd,turns,ms} ; stocké dans RunRecord.m ; affiché par run, par agent, cumul par issue",
+      "files": ["src/adapters/types.ts", "src/adapters/claude.ts", "src/store.ts", "src/service.ts", "public/index.html"],
+      "verify_first": "format d'usage d'agy et codex dans leurs stream-json (ne rien supposer)",
+      "done_when": "test sur log réel ; le tableau de bord affiche tokens et $ du dernier run",
+      "why": "mesurer avant d'optimiser"
+    },
+    {
+      "id": "K2", "p": 2, "t": "budget",
+      "st": "partial",
+      "pr": 68,
+      "delivered": "effort et budgetUsd existent dans la config et sont injectés dans les runs compatibles",
+      "remaining": "mapper le dépassement budget vers BUDGET_EXCEEDED et attente humaine ; vérifier les flags codex exec",
+      "do": "config par agent et relecteur : effort, maxBudgetUsd ; claude --effort --max-budget-usd, agy --effort ; dépassement -> code BUDGET_EXCEEDED -> humain",
+      "defaults": { "agent": { "effort": "medium", "usd": 1.5 }, "reviewer": { "effort": "medium", "usd": 0.5 } },
+      "files": ["src/config.ts", "config.json", "src/adapters/claude.ts", "src/adapters/antigravity.ts"],
+      "verify_first": "flags de codex exec",
+      "done_when": "un run coupé au budget apparaît avec BUDGET_EXCEEDED"
+    },
+    {
+      "id": "K3", "p": 3, "t": "diff léger",
+      "st": "done",
+      "pr": 68,
+      "delivered": "diff relecteur filtré pour package-lock.json et packages/domain/src/database.types.ts",
+      "remaining": "étendre la liste des fichiers générés si de nouveaux générés apparaissent",
+      "do": "exclure du diff relecteur package-lock.json, database.types.ts et autres fichiers générés ; les remplacer par « fichier: +N/-M »",
+      "files": ["src/service.ts", "src/review.ts"],
+      "done_when": "test : diff filtré ne contient plus le lockfile"
+    },
+    {
+      "id": "K4", "p": 4, "t": "routage relecteur",
+      "st": "partial",
+      "pr": 69,
+      "delivered": "pickReviewerId existe et route contrat/fixRounds vers claude, petits diffs vers codex",
+      "remaining": "aligner le plan avec les reviewers configurés : codex est utilisé pour petits diffs au lieu de haiku ; sonnet/opus ne sont pas séparés si le reviewer claude pointe un seul modèle",
+      "do": "pickReviewer(files, diffLines, fixRounds) : contractPaths|supabase|fixRounds>=2 -> opus ; diffLines<80 -> haiku ; sinon sonnet",
+      "files": ["src/decisions.ts", "src/decisions.test.ts", "config.json", "src/review.ts"],
+      "done_when": "tests unitaires des 3 cas ; le choix apparaît dans le commentaire de relecture"
+    },
+    {
+      "id": "K5", "p": 5, "t": "codes d'erreur",
+      "st": "partial",
+      "pr": 70,
+      "delivered": "ErrorCode et ERROR_FIX_LIMITS existent, avec limites par code pour les décisions de réparation",
+      "remaining": "ajouter les codes manquants du plan (QUOTA, BUDGET_EXCEEDED, TIMEOUT) ou réduire la liste cible ; stocker/exposer les codes dans les ReviewRecord et l'UI si nécessaire",
+      "do": "enum stable + libellé FR dérivé ; limites de réparation par code",
+      "codes": ["SCOPE_VIOLATION", "CONTRACT_CHANGE", "TYPECHECK_FAIL", "LINT_FAIL", "TEST_FAIL", "REVIEW_REJECT", "NO_VERDICT", "CMD_REFUSED", "QUOTA", "BUDGET_EXCEEDED", "TIMEOUT", "SECURITY_CONCERN"],
+      "limits": { "SCOPE_VIOLATION": 1, "TYPECHECK_FAIL": 3, "LINT_FAIL": 3, "TEST_FAIL": 3, "REVIEW_REJECT": 2, "NO_VERDICT": 1, "CONTRACT_CHANGE": 0, "SECURITY_CONCERN": 0 },
+      "files": ["src/decisions.ts", "src/decisions.test.ts", "src/store.ts", "src/review.ts", "public/index.html"],
+      "done_when": "ReviewRecord.e contient des codes ; au-delà de la limite -> attente-humain"
+    },
+    {
+      "id": "K6", "p": 6, "t": "schéma relecteur",
+      "st": "partial",
+      "pr": 72,
+      "delivered": "validation stricte du verdict relecteur {approve,comments} via validateReviewerResponse",
+      "remaining": "aligner le schéma réel avec la cible {v,ok,e:[...]} ou modifier la cible ; ajouter la relance JSON valide seulement si absente",
+      "do": "sortie {v:1,ok:bool,e:[{c,f,l,se,fx}]} ; claude via --json-schema ; agy/codex : validation stricte + 1 relance « JSON valide seulement » ; le run de correction reçoit ce JSON au lieu de puces en prose",
+      "files": ["src/schemas.ts", "src/prompts.ts", "src/review.ts", "src/adapters/claude.ts", "src/service.ts"],
+      "done_when": "verdict invalide -> 1 relance puis NO_VERDICT"
+    },
+    {
+      "id": "K7", "p": 7, "t": "enveloppe de fin de run",
+      "st": "partial",
+      "pr": 73,
+      "delivered": "prompt agent demande une enveloppe JSON de fin et src/schemas.ts contient validateAgentFinalMessage",
+      "remaining": "brancher la lecture de finalText sur validateAgentFinalMessage ; utiliser s/ok/e/val pour bloquer ou labelliser sans lire la prose",
+      "do": "dernier message de l'agent = {v:1,id:issue,s:ok|fail|blocked,pr,val:{tc,li,te},e:[codes]} ; lu par finalText ; l'orchestrateur revalide quand même",
+      "files": ["src/schemas.ts", "src/prompts.ts", "src/service.ts"],
+      "done_when": "s=blocked -> label bloquée sans lire la prose"
+    },
+    {
+      "id": "K8", "p": 8, "t": "contexte de tâche",
+      "st": "partial",
+      "pr": 71,
+      "delivered": "template d'issue structuré ajouté sous .github/ISSUE_TEMPLATE/tache.md ; prompt agent demande règles, issue et fichiers listés",
+      "remaining": "vérifier le gain réel sur 3 tâches comparables ; corriger le plan ou le code pour l'ordre exact règles fixes puis variables si nécessaire",
+      "do": "modèle d'issue : files (plages facultatives), ac, deps, hors-périmètre ; prompt : règles fixes d'abord, variables ensuite, « lis seulement les fichiers listés »",
+      "files": [".github/ISSUE_TEMPLATE/tache.md", "src/prompts.ts"],
+      "done_when": "K1 montre moins de tours sur 3 tâches comparables"
+    },
+    {
+      "id": "K9", "p": 9, "t": "garde-coût par tâche",
+      "st": "partial",
+      "pr": 71,
+      "delivered": "RunRecord.cumulCostUsd existe comme champ persistant",
+      "remaining": "calculer le cumul tâche + corrections + relectures ; bloquer les nouvelles relectures/corrections auto au-delà de 1,5 USD ; ajouter le test du seuil",
+      "do": "cumul usd tâche + corrections + relectures ; > 1.5 USD -> humain, plus de relecture ni correction automatique",
+      "files": ["src/service.ts", "src/decisions.ts", "src/decisions.test.ts"],
+      "done_when": "test du seuil"
+    }
+  ],
+
+  "reject": [
+    { "x": "service artifact_store sha256", "why": "git le fait déjà" },
+    { "x": "context_compiler avec classement et compression", "why": "incompatible avec des agents CLI autonomes" },
+    { "x": "tester LLM", "why": "les scripts déterministes sont gratuits et fiables" },
+    { "x": "enveloppe JSON dans les PR", "why": "lecteur humain" }
+  ],
+
+  "order_note": "K1 d'abord (mesure), puis K2 et K3 (gain immédiat), K4-K9 un par PR ; progression %/X sur Y du tableau de bord = tâche séparée déjà demandée"
+}

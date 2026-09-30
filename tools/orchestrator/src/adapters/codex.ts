@@ -31,4 +31,5 @@ export const codex: CliAdapter = {
       .filter((t): t is string => typeof t === "string");
     return texts.at(-1);
   },
+  usage: () => undefined,
 };

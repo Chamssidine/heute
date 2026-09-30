@@ -36,3 +36,19 @@ test("shift labels match docs/design/screens.md §6.5", () => {
   assert.equal(strings.shifts.balanceHeader("120:00", "174:00"), "IST 120:00 / Soll 174:00 Std.");
   assert.equal(strings.shifts.monthNames[9], "Oktober");
 });
+
+test("auth and profil strings match docs/design/screens.md §6.6", () => {
+  assert.equal(strings.auth.title, "Heute");
+  assert.equal(strings.auth.subtitle, "Jugendherberge Musterberg");
+  assert.equal(strings.auth.emailLabel, "E-Mail");
+  assert.equal(strings.auth.passwordLabel, "Passwort");
+  assert.equal(strings.auth.showPassword, "Anzeigen");
+  assert.equal(strings.auth.hidePassword, "Verbergen");
+  assert.equal(strings.auth.loginAction, "Anmelden");
+  assert.equal(strings.auth.helpText, "Probleme? Frag an der Rezeption.");
+  assert.equal(strings.profil.title, "Profil");
+  assert.equal(strings.profil.logoutAction, "Abmelden");
+  assert.equal(strings.profil.roles.staff, "Mitarbeiter");
+  assert.equal(strings.profil.roles.kitchen_lead, "Küchenleitung");
+  assert.equal(strings.profil.departments.kueche, "Küche");
+});

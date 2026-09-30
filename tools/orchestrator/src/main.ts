@@ -23,6 +23,7 @@ process.on("unhandledRejection", (reason) => {
 });
 
 await github.ensureStatusLabels();
+await orchestrator.releaseInterruptedRuns();
 await orchestrator.refresh();
 // ORCHESTRATOR_PORT lets a second instance run next to the usual one (e.g. to test a change).
 startServer(Number(process.env["ORCHESTRATOR_PORT"] ?? config.port), orchestrator, store);
