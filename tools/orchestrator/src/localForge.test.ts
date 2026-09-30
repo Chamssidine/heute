@@ -115,3 +115,25 @@ test("local forge: state is one JSON file that survives a restart", async () => 
   assert.equal(saved.v, 1);
   assert.equal(saved.tasks[0]?.notes[0]?.body, "note");
 });
+
+test("review merges the base into the head before validating: behind is fine, conflicts are reported", async () => {
+  const { repo } = fixture();
+  const { mergeBaseInto } = await import("./worktree.ts");
+  branchWith(repo, "a/i7", "b.txt", "feature\n");
+  git(repo, "switch", "-q", "dev");
+  writeFileSync(join(repo, "c.txt"), "base avancée\n");
+  git(repo, "add", ".");
+  git(repo, "commit", "-q", "-m", "dev avance");
+  git(repo, "checkout", "-q", "--detach", "a/i7");
+  assert.equal(await mergeBaseInto(repo, "dev"), "merged");
+  assert.equal(git(repo, "show", "HEAD:c.txt"), "base avancée");
+
+  git(repo, "checkout", "-q", "--detach", "a/i7");
+  git(repo, "switch", "-q", "dev");
+  writeFileSync(join(repo, "b.txt"), "autre version\n");
+  git(repo, "add", ".");
+  git(repo, "commit", "-q", "-m", "conflit");
+  git(repo, "checkout", "-q", "--detach", "a/i7");
+  assert.equal(await mergeBaseInto(repo, "dev"), "conflict");
+  assert.equal(git(repo, "status", "--porcelain"), "", "the failed merge is undone");
+});

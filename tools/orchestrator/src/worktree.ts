@@ -156,3 +156,15 @@ export async function headSha(dir: string): Promise<string> {
   if (r.code !== 0) throw new Error(`git rev-parse (${dir}) : ${r.out}`);
   return r.out;
 }
+
+// Merges the base branch into the checked-out (detached) head, to validate what would really land
+// in the base branch. On conflicts the merge is undone and reported.
+export async function mergeBaseInto(
+  dir: string,
+  baseRef: string,
+): Promise<"up-to-date" | "merged" | "conflict"> {
+  const merge = await gitOutput(dir, ["merge", baseRef, "--no-edit"]);
+  if (merge.code === 0) return /Already up to date/i.test(merge.out) ? "up-to-date" : "merged";
+  await gitOutput(dir, ["merge", "--abort"]);
+  return "conflict";
+}

@@ -9,7 +9,7 @@ import { reviewPrompt } from "./prompts.ts";
 import { startResumableRun } from "./runner.ts";
 import { validateReviewerResponse } from "./schemas.ts";
 import type { UsageMetrics } from "./adapters/types.ts";
-import { prepareWorktree } from "./worktree.ts";
+import { mergeBaseInto, prepareWorktree } from "./worktree.ts";
 
 export interface ReviewResult extends ReviewDecision {
   reviewerComments: string[];
@@ -25,6 +25,7 @@ export interface ReviewRequest {
   pr: { number: number; headRefName: string };
   // Full ref of the PR head (origin/<branch> on GitHub, the local branch in local mode).
   headRef: string;
+  baseRef: string;
   fetch: boolean;
   // Set when the orchestrator already validated exactly this commit.
   validated?: { log: string };
@@ -87,9 +88,21 @@ export async function reviewPullRequest(req: ReviewRequest): Promise<ReviewResul
 
   req.onLine("Relecture : préparation du worktree et validations…");
   await prepareWorktree(config.reviewWorktree, { detach: req.headRef }, { fetch: req.fetch });
-  const validations = req.validated
-    ? { ok: true, log: req.validated.log }
-    : await runValidations(config.reviewWorktree);
+  // What would land in the base branch is the head merged with it: validate that, so that a
+  // branch that is simply behind (formatting fixed on main since) is not rejected for it.
+  const merged = await mergeBaseInto(config.reviewWorktree, req.baseRef);
+  if (merged === "conflict") {
+    return {
+      outcome: "changes",
+      reasons: [`Conflit de fusion avec la branche de base ${req.baseRef}`],
+      reviewerComments: [],
+      validationLog: "",
+    };
+  }
+  const validations =
+    req.validated && merged === "up-to-date"
+      ? { ok: true, log: req.validated.log }
+      : await runValidations(config.reviewWorktree);
   if (!validations.ok) {
     const decision = decideReview({ ...base, validationsPassed: false, reviewerApproved: true });
     return { ...decision, reviewerComments: [], validationLog: validations.log };
