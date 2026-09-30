@@ -190,7 +190,10 @@ export class Orchestrator {
   async releaseInterruptedRuns(): Promise<void> {
     for (const run of this.interrupted.splice(0)) {
       const target = run.kind === "fix" && run.pr !== undefined ? run.pr : run.issue;
-      await this.github.setLabels(target, [], [STATUS_LABELS.running]);
+      // A run recorded before a change of mode may point to a number this forge does not know.
+      await this.github
+        .setLabels(target, [], [STATUS_LABELS.running])
+        .catch((e: Error) => this.store.log("warn", `Libération de #${target} : ${e.message}`));
       this.store.log(
         "warn",
         `Run de ${run.agent} sur #${target} coupé par le redémarrage : tâche libérée, le travail poussé sera repris`,
