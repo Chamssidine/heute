@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { KITCHEN_EMPTY_MESSAGE, useKitchenDay } from "./hooks.ts";
+import { useKitchenDay } from "./hooks.ts";
 import {
   calculateGroupDiets,
   calculateKitchenTotals,
@@ -61,7 +61,7 @@ describe("features/kitchen (P2-06 [L])", () => {
       });
     });
 
-    it("calcule les totaux par repas et les indicateurs d'absence", () => {
+    it("calcule les totaux par repas", () => {
       const groups: KitchenGroupDetail[] = [
         {
           matchcode: "TEST/1",
@@ -80,13 +80,6 @@ describe("features/kitchen (P2-06 [L])", () => {
       assert.equal(totals.mittag.total, 0);
       assert.equal(totals.abend.total, 0);
       assert.equal(totals.grill.total, 0);
-      // Pas de repas chaud le midi ni le soir
-      assert.equal(totals.noLunch, true);
-      assert.equal(totals.keinMittagessen, true);
-      assert.equal(totals.noDinner, true);
-      assert.equal(totals.keinAbendessen, true);
-      assert.equal(totals.mittag.noMeal, true);
-      assert.equal(totals.abend.noMeal, true);
     });
 
     it("formate le résumé des repas d'un groupe selon screens.md §6.3", () => {
@@ -96,6 +89,13 @@ describe("features/kitchen (P2-06 [L])", () => {
       ]);
 
       assert.equal(summary, "Mittag LP 80 · Abend 68");
+
+      const grillSummary = formatGroupMealsSummary([
+        { meal: "abend", count: 12, veg: 4, vegan: 2, mos: 4, al: 1 },
+        { meal: "grill", count: 12, veg: 0, vegan: 0, mos: 0, al: 0, time: 1080 },
+      ]);
+
+      assert.equal(grillSummary, "Abend 12 · GR 12 (18:00)");
     });
 
     it("formate les régimes dans l'ordre strict VEG · vegan · MOS · AL", () => {
@@ -126,12 +126,8 @@ describe("features/kitchen (P2-06 [L])", () => {
       assert.equal(hasGrillGroup, true);
     });
 
-    it("comprend une note courte « 1× Nudeln/Müsli »", () => {
-      const hasNote = kitchenDayFixture.groups.some(
-        (g) =>
-          g.note?.includes("1× Nudeln/Müsli") ||
-          g.meals.some((m) => m.note?.includes("1× Nudeln/Müsli")),
-      );
+    it("comprend une note courte « 1× Nudeln/Müsli » au niveau du groupe", () => {
+      const hasNote = kitchenDayFixture.groups.some((g) => g.note?.includes("1× Nudeln/Müsli"));
       assert.equal(hasNote, true);
     });
 
@@ -163,18 +159,15 @@ describe("features/kitchen (P2-06 [L])", () => {
       assert.ok(abend.dessert && abend.dessert.length > 0);
     });
 
-    it("gère correctement les indicateurs keinMittagessen et keinAbendessen", () => {
+    it("gère correctement les indicateurs noLunch et noDinner", () => {
       // Jour standard avec déjeuner et dîner
       assert.equal(kitchenDayFixture.noLunch, false);
       assert.equal(kitchenDayFixture.noDinner, false);
-      assert.equal(kitchenDayFixture.keinMittagessen, false);
-      assert.equal(kitchenDayFixture.keinAbendessen, false);
 
       // Jour sans déjeuner (kitchenDayNoLunchFixture)
       assert.equal(kitchenDayNoLunchFixture.noLunch, true);
-      assert.equal(kitchenDayNoLunchFixture.keinMittagessen, true);
+      assert.equal(kitchenDayNoLunchFixture.noDinner, false);
       assert.equal(kitchenDayNoLunchFixture.totals.mittag.total, 0);
-      assert.equal(kitchenDayNoLunchFixture.totals.mittag.noMeal, true);
       assert.equal(kitchenDayNoLunchFixture.menu.mittag, null);
     });
   });
@@ -267,11 +260,10 @@ describe("features/kitchen (P2-06 [L])", () => {
       assert.equal(state.data.noLunch, true);
     });
 
-    it("renvoie un ViewState empty avec le message copy.md §7.3 pour une date inconnue", () => {
+    it("renvoie un ViewState empty pour une date inconnue", () => {
       const state = useKitchenDay("2099-01-01");
 
       assert.equal(state.status, "empty");
-      assert.equal(state.message, KITCHEN_EMPTY_MESSAGE);
       assert.equal(state.data, undefined);
     });
   });

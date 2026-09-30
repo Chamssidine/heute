@@ -1,4 +1,4 @@
-import type { Database } from "@heute/domain";
+import { formatHHMM, type Database } from "@heute/domain";
 
 /**
  * Types de repas du modèle de données (public.meal).
@@ -60,47 +60,33 @@ export interface DietCounts {
 }
 
 /**
- * Total d'un repas pour la journée, incluant les régimes et l'indicateur d'absence.
+ * Total d'un repas pour la journée, incluant les régimes.
  */
 export interface MealTotal extends DietCounts {
   meal: MealType;
   total: number;
-  noMeal?: boolean;
 }
 
 /**
- * Totaux journaliers consolidés pour les cinq repas et indicateurs d'absence.
+ * Totaux journaliers consolidés par repas (screens.md §6.3).
  */
-export interface KitchenTotals {
-  frueh: MealTotal;
-  mittag: MealTotal;
-  abend: MealTotal;
-  lunchpaket: MealTotal;
-  grill: MealTotal;
-  byMeal: Record<MealType, MealTotal>;
-  noLunch: boolean;
-  noDinner: boolean;
-  keinMittagessen: boolean;
-  keinAbendessen: boolean;
-}
+export type KitchenTotals = Record<MealType, MealTotal>;
 
 /**
  * Repas individuel au sein d'une réservation / groupe.
+ * Si une heure spécifique est requise (ex. grill), elle est stockée en minutes depuis minuit.
  */
 export interface KitchenGroupMeal extends DietCounts {
   meal: MealType;
   count: number;
-  note?: string | null;
-  allergens?: Record<string, number>;
+  time?: number | null;
 }
 
 /**
  * Détail d'un groupe / réservation pour la journée (screens.md §6.3).
  */
 export interface KitchenGroupDetail {
-  bookingId?: string;
   matchcode: string;
-  name?: string;
   meals: KitchenGroupMeal[];
   diets: DietCounts;
   note?: string | null;
@@ -136,8 +122,6 @@ export interface KitchenDay {
   menu: KitchenDayMenu;
   noLunch: boolean;
   noDinner: boolean;
-  keinMittagessen: boolean;
-  keinAbendessen: boolean;
   updatedAt?: string;
 }
 
@@ -161,15 +145,9 @@ export function calculateGroupDiets(meals: readonly KitchenGroupMeal[]): DietCou
 }
 
 /**
- * Calcule les totaux par repas et les indicateurs d'absence à partir des groupes.
+ * Calcule les totaux par repas à partir des groupes.
  */
-export function calculateKitchenTotals(
-  groups: readonly KitchenGroupDetail[],
-  options?: {
-    noLunch?: boolean;
-    noDinner?: boolean;
-  },
-): KitchenTotals {
+export function calculateKitchenTotals(groups: readonly KitchenGroupDetail[]): KitchenTotals {
   const initMeal = (meal: MealType): MealTotal => ({
     meal,
     total: 0,
@@ -179,7 +157,7 @@ export function calculateKitchenTotals(
     al: 0,
   });
 
-  const byMeal: Record<MealType, MealTotal> = {
+  const totals: KitchenTotals = {
     frueh: initMeal("frueh"),
     mittag: initMeal("mittag"),
     abend: initMeal("abend"),
@@ -189,7 +167,7 @@ export function calculateKitchenTotals(
 
   for (const group of groups) {
     for (const m of group.meals) {
-      const target = byMeal[m.meal];
+      const target = totals[m.meal];
       target.total += m.count;
       target.veg += m.veg;
       target.vegan += m.vegan;
@@ -198,26 +176,7 @@ export function calculateKitchenTotals(
     }
   }
 
-  // L'indicateur « Kein Mittagessen » est actif si forcé ou si aucun déjeuner chaud n'est servi.
-  const noLunch = options?.noLunch ?? byMeal.mittag.total === 0;
-  // L'indicateur « Kein Abendessen » est actif si forcé ou si aucun dîner n'est servi.
-  const noDinner = options?.noDinner ?? (byMeal.abend.total === 0 && byMeal.grill.total === 0);
-
-  byMeal.mittag.noMeal = noLunch;
-  byMeal.abend.noMeal = noDinner;
-
-  return {
-    frueh: byMeal.frueh,
-    mittag: byMeal.mittag,
-    abend: byMeal.abend,
-    lunchpaket: byMeal.lunchpaket,
-    grill: byMeal.grill,
-    byMeal,
-    noLunch,
-    noDinner,
-    keinMittagessen: noLunch,
-    keinAbendessen: noDinner,
-  };
+  return totals;
 }
 
 /**
@@ -231,7 +190,7 @@ export function formatGroupMealsSummary(meals: readonly KitchenGroupMeal[]): str
         return `Mittag LP ${m.count}`;
       }
       if (m.meal === "grill") {
-        return m.note ? `GR ${m.count} (${m.note})` : `GR ${m.count}`;
+        return m.time != null ? `GR ${m.count} (${formatHHMM(m.time)})` : `GR ${m.count}`;
       }
       return `${label} ${m.count}`;
     })
@@ -273,20 +232,18 @@ export function createKitchenDay(params: {
   noDinner?: boolean;
   updatedAt?: string;
 }): KitchenDay {
-  const totals = calculateKitchenTotals(params.groups, {
-    noLunch: params.noLunch,
-    noDinner: params.noDinner,
-  });
+  const totals = calculateKitchenTotals(params.groups);
+
+  const noLunch = params.noLunch ?? totals.mittag.total === 0;
+  const noDinner = params.noDinner ?? (totals.abend.total === 0 && totals.grill.total === 0);
 
   return {
     date: params.date,
     totals,
     groups: [...params.groups],
     menu: params.menu,
-    noLunch: totals.noLunch,
-    noDinner: totals.noDinner,
-    keinMittagessen: totals.keinMittagessen,
-    keinAbendessen: totals.keinAbendessen,
+    noLunch,
+    noDinner,
     updatedAt: params.updatedAt,
   };
 }
@@ -307,7 +264,6 @@ const musterschuleMeals: KitchenGroupMeal[] = [
     vegan: 0,
     mos: 4,
     al: 0,
-    note: "1× Nudeln/Müsli",
   },
   {
     meal: "abend",
@@ -327,7 +283,6 @@ const tsvMeals: KitchenGroupMeal[] = [
     vegan: 2,
     mos: 4,
     al: 1,
-    allergens: { laktose: 1 },
   },
   {
     meal: "grill",
@@ -336,7 +291,7 @@ const tsvMeals: KitchenGroupMeal[] = [
     vegan: 0,
     mos: 0,
     al: 0,
-    note: "18:00",
+    time: 18 * 60,
   },
 ];
 
@@ -380,33 +335,24 @@ const einzelgaesteMeals: KitchenGroupMeal[] = [
 
 export const KITCHEN_FIXTURE_GROUPS: readonly KitchenGroupDetail[] = [
   {
-    bookingId: "b0000000-0000-4000-8000-000000000001",
     matchcode: "MUSTERSCHULE/40001",
-    name: "Klasse 8b Musterschule",
     meals: musterschuleMeals,
     diets: calculateGroupDiets(musterschuleMeals),
     note: "1× Nudeln/Müsli",
   },
   {
-    bookingId: "b0000000-0000-4000-8000-000000000002",
     matchcode: "TSV MUSTER/40002",
-    name: "Sportverein Muster",
     meals: tsvMeals,
     diets: calculateGroupDiets(tsvMeals),
-    note: "Grillen 18:00",
     allergens: { laktose: 1 },
   },
   {
-    bookingId: "b0000000-0000-4000-8000-000000000003",
     matchcode: "TESTCHOR/40003",
-    name: "Chorfreizeit Test",
     meals: testchorMeals,
     diets: calculateGroupDiets(testchorMeals),
   },
   {
-    bookingId: "b0000000-0000-4000-8000-000000000004",
     matchcode: "Einzelgäste_27+",
-    name: "Einzelgäste ab 27 Jahren",
     meals: einzelgaesteMeals,
     diets: calculateGroupDiets(einzelgaesteMeals),
   },
@@ -443,9 +389,7 @@ export const kitchenDayNoLunchFixture: KitchenDay = createKitchenDay({
   date: "2026-10-05",
   groups: [
     {
-      bookingId: "b0000000-0000-4000-8000-000000000004",
       matchcode: "Einzelgäste_27+",
-      name: "Einzelgäste ab 27 Jahren",
       meals: [
         {
           meal: "frueh",
