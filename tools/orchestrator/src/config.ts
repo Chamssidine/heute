@@ -48,6 +48,8 @@ export interface Config {
   // repository; GitHub only receives the base branch (and the one publish PR).
   mode?: "github" | "local";
   mergeWorktree?: string;
+  // Spend allowed per task before the autopilot hands it to the human (default 1.5 $).
+  taskBudgetUsd?: number;
   baseBranch?: string;
   productionBranch?: string;
   autopilot?: Partial<AutopilotConfig>;

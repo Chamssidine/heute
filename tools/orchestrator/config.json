@@ -2,6 +2,7 @@
   "repo": "Chamssidine/heute",
   "mode": "local",
   "mergeWorktree": "C:/dev/heute-merge",
+  "taskBudgetUsd": 3,
   "baseBranch": "dev",
   "productionBranch": "main",
   "autopilot": {
