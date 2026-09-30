@@ -1,109 +1,128 @@
 # Orchestrateur Heute
 
-Outil local qui prépare et suit le travail des agents IA (Claude, Gemini, Codex…) sur les issues GitHub, avec un écran de surveillance.
+Outil local qui fait travailler des agents IA (Claude, Gemini via `agy`, Codex…) sur les tâches du projet, vérifie leur travail, le relit, et te montre tout dans un écran de surveillance.
 
-**Principe : l'outil prépare, l'humain décide.** Lancer un agent et merger une PR se font uniquement par un clic dans l'écran. La relecture automatique est en lecture seule : elle valide, commente et pose un label.
+**Principe : l'outil travaille, l'humain décide de ce qui entre.** Les agents n'ont aucun accès à GitHub. Tu merges (un clic) ce qui entre dans `dev`, puis tu publies `dev` vers `main`. Tout le reste est automatique, avec des arrêts explicites (jamais silencieux).
 
-## Démarrer
+## Démarrer et arrêter
 
 ```bash
 npm run orchestrator
 ```
 
-Puis ouvrir http://127.0.0.1:4000. Le serveur n'écoute que sur la machine locale.
+Puis ouvre http://127.0.0.1:4000 (le serveur n'écoute que sur la machine locale). Pour l'arrêter : Ctrl+C, ou fermer le processus `node src/main.ts`.
 
-## Cycle d'une tâche
+Variables utiles : `ORCHESTRATOR_PORT` (autre port) et `STATE_DIR` (autre dossier d'état) pour lancer une instance de test à côté de la vraie.
 
-1. Une issue porte un label `agent:<id>` et, si besoin, une ligne `Dépend de #12, #14`.
-2. **Lancer la prochaine tâche** : l'outil choisit la plus ancienne issue prête de l'agent, remet son worktree sur `origin/main`, puis lance sa CLI en mode non interactif sur la branche `<préfixe>/i<numéro>`.
-3. À la fin, s'il trouve la PR, il lance la relecture automatique :
-   - périmètre des fichiers ;
-   - `typecheck`, `lint` et `test` dans `reviewWorktree` ;
-   - avis du relecteur LLM choisi.
-4. Il pose l'un de ces labels :
-   - `prête` : tout passe ;
-   - `changements` : défaut à corriger ;
-   - `attente-humain` : contrat touché ou verdict illisible.
-5. Toi :
-   - **Merger** ;
-   - ou **Renvoyer à l'agent**, avec une note si besoin ;
-   - ou **Relire** avec un autre relecteur (Claude ou Codex).
+## Le circuit d'une tâche (mode local)
 
-## Antigravity CLI (`agy`) : agents L et U
+1. **La tâche** est une entrée de `.state/local.json` (importée des issues GitHub au premier démarrage), avec une étiquette `agent:<id>` et, si besoin, une ligne `Dépend de #12`.
+2. **L'agent** reçoit un message JSON (voir « Protocole ») et travaille dans son dossier git dédié, sur la branche `<préfixe>/i<numéro>`. Il commite en local. Il n'a ni `gh`, ni `git push`, ni réseau.
+3. **Vérifications de l'orchestrateur** sur ses commits : périmètre des fichiers, `typecheck`, `lint`, tests. En cas d'échec, l'agent corrige dans le même dossier avec la sortie exacte de l'erreur (2 tours), avant que rien ne soit transmis.
+4. **PR locale** : tout est vert, elle est enregistrée dans `local.json`.
+5. **Relecture** : l'orchestrateur fusionne `dev` dans la tête de la PR, rejoue les vérifications sur ce résultat (ce qui entrerait vraiment dans `dev`), puis un relecteur LLM rend un verdict JSON. Verdicts : `prête`, `changements`, `attente-humain` (un contrat est touché : migrations, `model.ts`, types générés…).
+6. **Toi** : sur la carte, « Voir le diff », puis **Merger** (fusion squash dans `dev`, en local), ou **Renvoyer à l'agent**, ou **Relire**.
+7. **Publication** : quand `dev` a de l'avance, l'orchestrateur pousse `dev` (un seul push) et ouvre **une** PR GitHub « Publier dev → main ». Tu la merges avec « Create a merge commit ».
 
-L et U tournent avec la CLI d'Antigravity (`agy -p`), lancée par l'outil comme Claude. Aucun copier-coller.
+Le mode GitHub historique (issues, étiquettes et PR sur GitHub) reste disponible avec `"mode": "github"`.
 
-- **Fichiers :** l'agent les modifie grâce à `--mode accept-edits`.
-- **Commandes shell (git, npm, gh) :** en mode non interactif, agy ne peut pas demander la permission. Il refuse donc toute commande qui ne correspond pas à une règle `permissions.allow` de `%USERPROFILE%\.gemini\antigravity-cli\settings.json`. Les commandes refusées apparaissent dans le log de l'agent (« refusé : command »).
-- **Relecteur `gemini` :** il tourne en `--mode plan`, en lecture seule.
+## Autopilote et garde-fous
 
-Ne pas utiliser `--dangerously-skip-permissions`, qui autorise tout.
+Interrupteur « Autopilote » en haut de l'écran. Il relit les PR sans verdict, renvoie les corrections, lance l'agent suivant, redirige les PR vers `dev`, garde `dev` à jour avec `main` et maintient la PR de publication. **Il ne merge jamais.**
 
-**Syntaxe des règles d'agy**, vérifiée en réel (agy 1.0.12) :
+Il s'arrête, avec la raison affichée et un bouton « Reprendre », dans ces cas :
 
-- `command(npm run test)` compare **mot par mot le début** de la commande. Dans une chaîne `;` / `&&` / `|`, chaque morceau est vérifié séparément.
-- Pour `git`, `gh` et `npx`, agy exige la ligne entière : il faut donc une règle `command(regex:…)`, appliquée à toute la ligne. Nos règles excluent `; & | < > $` et l'accent grave, pour qu'une commande autorisée ne puisse pas en cacher une autre.
-- Priorité : `deny` > `ask` > `allow`.
+- 4 runs de suite sans PR ;
+- budget du jour atteint (`autopilot.dailyBudgetUsd`) ;
+- **la branche `dev` échoue déjà aux vérifications** (ce n'est alors pas la faute des agents : preuve affichée) ;
+- quota d'un fournisseur épuisé (reprise à l'heure indiquée) ;
+- budget d'une tâche dépassé (`taskBudgetUsd`) : bouton **« Étendre le budget (+1,50 $) »** sur la carte, sans toucher à la config ;
+- 4 corrections sur une même PR, ou 3 relectures en échec : elle passe à l'humain.
 
-Règles en place (à reproduire sur une autre machine) :
+Protections supplémentaires : un agent reste occupé pendant qu'on vérifie son travail ; les conflits avec `dev` sont détectés dès qu'une autre PR est mergée et la PR repart à son agent ; le travail d'un run coupé (redémarrage, quota) est gardé en commit « WIP ».
 
-```json
-"allow": [
-  "command(npm run typecheck)", "command(npm run lint)", "command(npm run test)",
-  "command(npm run format)", "command(npm test)", "command(npm install)", "command(npm ci)",
-  "command(regex:git (status|diff|log|show|add|commit|switch|checkout|fetch|pull|push|restore|rev-parse|branch|stash)( [^;&|<>$`]*)?)",
-  "command(regex:gh (issue (view|comment)|pr (create|view|diff|comment|list))( [^;&|<>$`]*)?)",
-  "command(regex:npx (prettier|eslint|tsc|expo)( [^;&|<>$`]*)?)"
-],
-"deny": [
-  "command(gh pr merge)", "command(gh api)", "command(gh repo)", "command(gh secret)",
-  "command(gh auth)", "command(gh workflow)", "command(gh release)",
-  "command(regex:gh (pr merge|api|repo|secret|auth|workflow|release).*)"
-]
-```
+## L'écran
 
-Test effectué : `git status --short`, `git log -1 --oneline`, `npm run typecheck`, `gh issue view`, `npx prettier --check` → autorisées ; `git status; echo …`, `git log -1 && echo …`, `npm run typecheck; echo …`, `gh issue view …; echo …`, `echo …`, `gh pr merge` → refusées.
+- **Statut de l'orchestrateur** : ce qu'il fait maintenant (relecture, vérification du travail d'un agent, fusion, synchronisation), les agents au travail, le prochain contrôle, et la raison quand il est au repos.
+- **Progression** : « X sur Y tâches », pourcentage, reste, par agent et par phase.
+- **À toi** : ce qui attend une décision (PR prêtes, contrats, budget, publication, autopilote en pause).
+- **Agents** : une carte par agent avec sa tâche, sa progression, et en direct le nombre d'étapes, de fichiers modifiés et de commits.
+- **Avancement** : tableau des tâches par état.
 
-## Agents dans un IDE sans CLI (mode manuel)
+## Créer et gérer des agents
 
-Si un agent ne tourne que dans un IDE, il utilise l'adaptateur `manual` (CLI `antigravity-ide` dans `config.json`) : l'outil ne lance rien lui-même.
+Bouton **« + Créer un agent »** : on part d'un agent existant (copie CLI, modèle, brief et périmètre) ou de zéro, puis on choisit :
 
-1. **Préparer la tâche** : l'outil choisit l'issue, remet le worktree de l'agent sur `origin/main` et affiche le prompt.
-2. Ouvre ce worktree dans l'IDE (par exemple `C:\dev\heute-l` pour L), puis **Copier le prompt** et colle-le dans une nouvelle conversation d'agent.
-3. L'outil détecte la fin tout seul, à chaque actualisation (toutes les 60 s) :
-   - **tâche** : la PR apparaît sur la branche `<préfixe>/i<numéro>` ;
-   - **correction** : un nouveau commit arrive sur la PR.
+- la CLI et le **modèle dans une liste** (celle d'`agy` vient de `agy models` ; pour Claude et Codex, elle est déclarée dans `clis.<cli>.models`) ;
+- le **brief** (`docs/agents/*.md`) et les **chemins autorisés** (la partie du projet où il peut écrire) ;
+- l'effort, le budget, et les **tâches à lui confier** : proposées d'après le « Modifier uniquement » de chaque issue (dans son périmètre, en partie, hors périmètre).
 
-   Il lance alors la relecture automatique.
+« Confier des tâches » réassigne à tout moment. « Supprimer l'agent » concerne ceux créés ici (enregistrés dans l'état) ; ceux de `config.json` se modifient dans le fichier. Un nouvel agent a besoin d'un brief : écris-le d'abord dans `docs/agents/`.
 
-4. **Terminé** : à utiliser si l'agent s'est arrêté sans PR (la tâche passe en `bloquée`). **Annuler** libère la tâche.
+## Protocole (JSON pour la machine)
 
-Les tâches en attente survivent à un redémarrage de l'orchestrateur.
+- **Message vers l'agent** : règles fixes d'abord, puis une ligne `Message : {…}` avec `t` (`task`, `fix`, `check`), `id`, `dir`, `brief`, `branch`, `base`, `baseRef`, `resume`, `spec`, `errors[{src,msg}]`, `round`.
+- **Fin de run de l'agent** : une ligne `{"v":1,"id":…,"s":"ok|fail|blocked","e":[codes],"val":{"tc":…,"li":…,"te":…}}`. L'orchestrateur revalide quand même tout.
+- **Verdict du relecteur** : `{"approve": true|false, "comments": [...]}`, validé strictement.
+- **Codes d'erreur** stables, avec limites de réparation par code (`decisions.ts`).
+- **État** : `.state/state.json` (runs, relectures, événements, rallonges de budget, agents créés), `.state/local.json` (tâches et PR), `.state/logs/` (sorties brutes). Tous ignorés par git.
 
-## Ajouter ou changer un LLM
+## Configuration (`config.json`)
 
-- **Changer le modèle ou la CLI d'un agent** : modifier `agents.<id>.cli` et `model` dans `config.json`.
-- **Ajouter un agent** : ajouter une entrée dans `agents` (worktree, label, préfixe de branche, brief, chemins autorisés).
-- **Ajouter une nouvelle CLI** :
-  1. écrire `src/adapters/<nom>.ts`, qui implémente `CliAdapter` (commande, résumé d'une ligne de sortie, texte final) ;
-  2. l'ajouter au registre `src/adapters/index.ts` ;
-  3. la déclarer dans `clis`.
-- **Ajouter un relecteur** : entrée dans `reviewers`.
-- **Permissions propres à une CLI** : `clis.<nom>.extraArgs.agent` / `.reviewer`, sans toucher au code.
+| Clé                                           | Rôle                                                                                                          |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `mode`                                        | `local` ou `github`                                                                                           |
+| `baseBranch`, `productionBranch`              | branche où les agents livrent (`dev`) et branche que l'humain publie (`main`)                                 |
+| `mergeWorktree`, `reviewWorktree`             | dossiers git de l'orchestrateur (fusions ; relectures)                                                        |
+| `taskBudgetUsd`                               | dépense maximale par tâche avant l'humain (défaut 1,5 $)                                                      |
+| `autopilot`                                   | `launchAgents`, `autoFix`, `failureLimit`, `dailyBudgetUsd`                                                   |
+| `refreshSeconds`, `runTimeoutMinutes`, `port` | rythme des contrôles, durée maximale d'un run, port                                                           |
+| `clis`                                        | CLI disponibles : adaptateur, commande, `models`, `extraArgs`                                                 |
+| `agents`                                      | agents : CLI, modèle, dossier, étiquette, préfixe de branche, brief, chemins autorisés, `effort`, `budgetUsd` |
+| `reviewers`, `defaultReviewer`                | relecteurs LLM                                                                                                |
+| `contractPaths`                               | chemins réservés à l'humain (contrats entre agents)                                                           |
 
-| Adaptateur    | État                                                                                                                |
-| ------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `claude`      | Vérifié. Agents limités par `--allowedTools` : pas de `gh pr merge`, pas de `gh api`.                               |
-| `antigravity` | Vérifié (agy 1.0.12). Fichiers en `accept-edits`, commandes limitées par les règles du settings.json d'Antigravity. |
-| `manual`      | Pour les agents d'IDE sans CLI : prompt à coller, fin détectée sur GitHub.                                          |
-| `gemini`      | Non utilisable ici : Google refuse Gemini CLI avec un compte gratuit individuel. Il faut une clé `GEMINI_API_KEY`.  |
-| `codex`       | Écrit d'après la documentation de `codex exec`, CLI non installée ici : à tester.                                   |
+Les agents `A`, `A2`, `L`, `U` sont déclarés ici ; ceux créés dans l'écran sont dans `.state/state.json`.
+
+## CLI et adaptateurs
+
+Ajouter une CLI : écrire `src/adapters/<nom>.ts` qui implémente `CliAdapter` (lancement, résumé d'une ligne de sortie, texte final, consommation, options d'effort), l'enregistrer dans `src/adapters/index.ts`, puis la déclarer dans `clis`.
+
+| Adaptateur    | État                                                                                                     |
+| ------------- | -------------------------------------------------------------------------------------------------------- |
+| `claude`      | Vérifié. Outils limités : pas de `gh`, pas de `git push/fetch/pull`.                                     |
+| `antigravity` | Vérifié (agy 1.0.12) : fichiers en `accept-edits`, commandes limitées par les règles de `settings.json`. |
+| `manual`      | Agents d'IDE sans CLI : prompt à coller, fin détectée dans l'état local.                                 |
+| `gemini`      | Non utilisable avec un compte gratuit individuel (clé `GEMINI_API_KEY` nécessaire).                      |
+| `codex`       | Écrit d'après la documentation de `codex exec`, non testé ici.                                           |
+
+### Permissions d'`agy` (agents L, U, U3…)
+
+En mode non interactif, `agy` refuse toute commande qui ne correspond pas à une règle `permissions.allow` de `%USERPROFILE%\.gemini\antigravity-cli\settings.json` (et un refus peut arrêter le run). Syntaxe vérifiée : `command(npm run test)` compare mot par mot le début ; pour `git` et `npx` il faut `command(regex:…)` sur la ligne entière ; priorité `deny` > `ask` > `allow`. Règles en place : `git` local seulement (`status|diff|log|show|add|rm|mv|commit|switch|checkout|restore|rev-parse|branch|stash`), `npm run typecheck|lint|test|format`, `npm test|install|ci`, `npx prettier|eslint|tsc|expo` ; **refusés** : tout `gh`, `git push|fetch|pull|remote|reset`. N'utilise jamais `--dangerously-skip-permissions`.
 
 ## Sécurité
 
-- **Gemini CLI**, si tu l'utilises un jour avec une clé API : en mode non interactif, il ne peut pas demander de confirmation, et il refuse de travailler dans un dossier non approuvé. Préfère une politique du Policy Engine plutôt que `--approval-mode yolo`, en l'ajoutant via `clis.gemini.extraArgs.agent`.
-- **Agents d'IDE :** leurs permissions sont celles que tu règles dans l'IDE. L'outil n'y a aucun accès.
+- Les agents n'ont **aucun secret** et aucun accès à GitHub ; ils n'utilisent que la base Supabase locale.
+- **API locale** : les actions exigent l'en-tête `x-orchestrator: 1` et une origine locale.
+- **Merge dans `dev` et publication vers `main` : toujours un clic humain.** Les PR qui touchent `contractPaths` ne sont jamais considérées comme prêtes sans toi.
+- Aucune donnée de santé dans les logs ni dans les messages.
 
-- **Aucun secret** n'est transmis aux agents par l'outil. Ils utilisent toutefois le `gh` connecté de la machine.
-- **API locale :** les actions exigent l'en-tête `x-orchestrator: 1` et une origine locale. Une page web externe ne peut donc pas déclencher d'action.
-- **Stockage :** état et logs dans `.state/`, ignoré par git.
+## Dépannage
+
+| Symptôme                                          | Cause probable et action                                                                               |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `EADDRINUSE 127.0.0.1:4000` au démarrage          | un orchestrateur tourne déjà : l'arrêter (processus `node src/main.ts`) avant de relancer              |
+| Autopilote « en pause : dev échoue déjà… »        | corriger `dev` (souvent un fichier mal formaté : `npx prettier --write .`), puis « Reprendre »         |
+| Carte « Budget tâche dépassé »                    | « Étendre le budget » sur la carte                                                                     |
+| « quota épuisé » / relectures en attente          | attendre l'heure de reprise affichée ; le quota Claude est partagé entre agents et relecteurs          |
+| PR « Conflit de fusion avec dev »                 | rien à faire : elle repart à son agent                                                                 |
+| L'app mobile ne charge plus sur le téléphone      | l'IP du PC a changé : mettre à jour `EXPO_PUBLIC_SUPABASE_URL` dans `apps/mobile/.env`, relancer Metro |
+| Un agent reste des minutes sur « il lit le code » | normal au début ; sinon changer son modèle (les modèles « Flash » explorent beaucoup)                  |
+
+## Tests
+
+```bash
+npm test -w tools/orchestrator
+```
+
+Les règles de décision, la création d'agents, les prompts, la validation des messages et la forge locale (sur un dépôt git jetable) sont testées.
