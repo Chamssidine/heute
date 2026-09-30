@@ -1,3 +1,7 @@
+/**
+ * Modèle « Team » pour l'interface mobile (P2-05 / issue #42).
+ * Contrat produit par l'Agent L vers l'Agent U selon docs/design/screens.md §6.4.
+ */
 import { formatHHMM, type Database } from "@heute/domain";
 
 /**
