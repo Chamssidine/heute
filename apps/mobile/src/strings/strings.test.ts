@@ -52,3 +52,14 @@ test("auth and profil strings match docs/design/screens.md §6.6", () => {
   assert.equal(strings.profil.roles.kitchen_lead, "Küchenleitung");
   assert.equal(strings.profil.departments.kueche, "Küche");
 });
+
+test("today strings match docs/design/screens.md §6.1", () => {
+  assert.equal(strings.today.myShift, "Mein Dienst");
+  assert.equal(strings.today.myTasks, "Meine Aufgaben");
+  assert.equal(strings.today.allTasks, "Alle Aufgaben");
+  assert.equal(strings.today.guestsToday, "Gäste heute");
+  assert.equal(strings.today.menu, "Menü");
+  assert.equal(strings.today.mittag, "Mittag");
+  assert.equal(strings.today.abend, "Abend");
+  assert.equal(strings.today.frueh, "Früh");
+});

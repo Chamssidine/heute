@@ -8,6 +8,7 @@ export interface SyncStampProps {
   isOffline?: boolean;
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
+  testID?: string;
 }
 
 export const SyncStamp: React.FC<SyncStampProps> = ({
@@ -15,13 +16,18 @@ export const SyncStamp: React.FC<SyncStampProps> = ({
   isOffline = false,
   style,
   textStyle,
+  testID,
 }) => {
+  const normalizedTime = time?.startsWith(strings.common.stand)
+    ? time.slice(strings.common.stand.length).trim()
+    : time;
+
   const displayText = isOffline
-    ? time
-      ? strings.common.offlineStand(time)
+    ? normalizedTime
+      ? strings.common.offlineStand(normalizedTime)
       : strings.common.offline
-    : time
-      ? strings.common.lastUpdated(time)
+    : normalizedTime
+      ? strings.common.lastUpdated(normalizedTime)
       : "";
 
   if (!displayText) {
@@ -30,6 +36,7 @@ export const SyncStamp: React.FC<SyncStampProps> = ({
 
   return (
     <View
+      testID={testID}
       style={[styles.container, style]}
       accessible={true}
       accessibilityRole="text"
