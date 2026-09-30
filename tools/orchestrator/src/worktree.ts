@@ -131,6 +131,13 @@ export async function localBranchExists(dir: string, branch: string): Promise<bo
 
 // Resumes an interrupted run's local branch as it is: commits and uncommitted work are kept.
 export async function checkoutLocalBranch(dir: string, branch: string): Promise<void> {
+  // A run cut short (restart, quota) leaves uncommitted work on the branch checked out here:
+  // keep it as a commit of that branch rather than refusing to switch or losing it.
+  const dirty = await gitOutput(dir, ["status", "--porcelain"]);
+  if (dirty.out !== "") {
+    await git(dir, ["add", "-A"]);
+    await git(dir, ["commit", "-q", "-m", "WIP : run interrompu"]);
+  }
   await git(dir, ["checkout", branch]);
 }
 
