@@ -228,3 +228,30 @@ export function failureStreak(results: readonly (string | undefined)[]): number 
 export function needsReview(labels: readonly string[]): boolean {
   return !labels.some((l) => (Object.values(STATUS_LABELS) as string[]).includes(l));
 }
+
+// The paths an issue says it writes to: « **Modifier uniquement** : `a/**`, `b/*.ts` ».
+export function taskPaths(body: string): string[] {
+  const line = body.match(/Modifier uniquement\**\s*:([^\n]*)/i)?.[1] ?? "";
+  return [...line.matchAll(/`([^`]+)`/g)].map((m) => m[1] ?? "").filter(Boolean);
+}
+
+// The fixed part of a glob: everything before its first wildcard.
+function staticPrefix(pattern: string): string {
+  return pattern.split(/[*?[{]/)[0] ?? "";
+}
+
+export type TaskFit = "inside" | "partial" | "outside" | "unknown";
+
+// Does an agent that may write to `allowed` fit a task that writes to `wanted`?
+// inside = every path of the task is covered; partial = some of it is; outside = none.
+export function taskFit(wanted: readonly string[], allowed: readonly string[]): TaskFit {
+  if (wanted.length === 0) return "unknown";
+  const covered = (w: string) => allowed.some((a) => staticPrefix(w).startsWith(staticPrefix(a)));
+  const touches = (w: string) =>
+    allowed.some((a) => {
+      const [x, y] = [staticPrefix(w), staticPrefix(a)];
+      return x.startsWith(y) || y.startsWith(x);
+    });
+  if (wanted.every(covered)) return "inside";
+  return wanted.some(touches) ? "partial" : "outside";
+}

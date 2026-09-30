@@ -44,6 +44,9 @@ function filterDiff(rawDiff: string): string {
 import {
   decideReview,
   failureStreak,
+  parseDependencies,
+  taskFit,
+  taskPaths,
   isManualRunDone,
   needsReview,
   nextIssue,
@@ -688,6 +691,42 @@ export class Orchestrator {
     }
     this.store.log("info", `${numbers.length} tâche(s) assignée(s) à l'agent ${agentId}`);
     await this.refresh();
+  }
+
+  // Which open tasks fit an agent that may write to these paths? Used by « Create an agent »
+  // when the human does not know what to give it: best fits first, ready ones before waiting ones.
+  suggestTasks(allowedPaths: string[]): unknown[] {
+    const withPr = this.issuesWithOpenPr();
+    const agentLabels = new Map(Object.entries(this.config.agents).map(([id, a]) => [a.label, id]));
+    const open = new Set(
+      this.store.live.issues.filter((i) => i.state === "OPEN").map((i) => i.number),
+    );
+    const order = { inside: 0, partial: 1, unknown: 2, outside: 3 } as const;
+    return this.store.live.issues
+      .filter(
+        (i) =>
+          i.state === "OPEN" &&
+          !withPr.has(i.number) &&
+          !i.labels.includes(STATUS_LABELS.running) &&
+          !i.labels.includes(STATUS_LABELS.humanTask),
+      )
+      .map((i) => {
+        const owner = i.labels.map((l) => agentLabels.get(l)).find(Boolean);
+        const waitingFor = parseDependencies(i.body).filter((n) => open.has(n));
+        return {
+          number: i.number,
+          title: i.title,
+          fit: taskFit(taskPaths(i.body), allowedPaths),
+          paths: taskPaths(i.body),
+          agent: owner,
+          ready: waitingFor.length === 0,
+          waitingFor,
+        };
+      })
+      .sort(
+        (a, b) =>
+          order[a.fit] - order[b.fit] || Number(b.ready) - Number(a.ready) || a.number - b.number,
+      );
   }
 
   async deleteAgent(id: string): Promise<void> {
