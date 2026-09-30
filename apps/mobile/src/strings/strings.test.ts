@@ -28,6 +28,15 @@ test("tab labels match docs/design/screens.md §6", () => {
   assert.equal(strings.tabs.comingSoon, "Bald verfügbar");
 });
 
+test("shift labels match docs/design/screens.md §6.5", () => {
+  assert.equal(strings.shifts.title, "Mein Dienstplan");
+  assert.equal(strings.shifts.week, "Woche");
+  assert.equal(strings.shifts.month, "Monat");
+  assert.equal(strings.shifts.sundayBonus, "(Sonntag)");
+  assert.equal(strings.shifts.balanceHeader("120:00", "174:00"), "IST 120:00 / Soll 174:00 Std.");
+  assert.equal(strings.shifts.monthNames[9], "Oktober");
+});
+
 test("auth and profil strings match docs/design/screens.md §6.6", () => {
   assert.equal(strings.auth.title, "Heute");
   assert.equal(strings.auth.subtitle, "Jugendherberge Musterberg");

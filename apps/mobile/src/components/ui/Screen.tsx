@@ -15,31 +15,9 @@ import { Banner } from "./Banner";
 import { EmptyState } from "./EmptyState";
 import { SyncStamp } from "./SyncStamp";
 
-// Ce type sera remplacé par celui de lib/query une fois livré par l'agent L.
-export type ViewState<T> =
-  | { status: "loading"; data?: undefined; updatedAt?: string }
-  | { status: "empty"; message?: string; data?: undefined; updatedAt?: string }
-  | {
-      status: "error";
-      message?: string;
-      onRetry?: () => void;
-      data?: undefined;
-      updatedAt?: string;
-    }
-  | {
-      status: "offline";
-      data: T;
-      updatedAt?: string;
-      onRetry?: () => void;
-    }
-  | {
-      status: "unauthorized";
-      message?: string;
-      onLogin?: () => void;
-      data?: undefined;
-      updatedAt?: string;
-    }
-  | { status: "success"; data: T; updatedAt?: string };
+import type { ViewState } from "../../lib/query";
+
+export type { ViewState };
 
 export interface ScreenProps<T> {
   title?: string;

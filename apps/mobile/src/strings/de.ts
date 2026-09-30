@@ -87,6 +87,28 @@ export const strings = {
     profil: "Profil",
     comingSoon: "Bald verfügbar",
   },
+  shifts: {
+    title: "Mein Dienstplan",
+    week: "Woche",
+    month: "Monat",
+    sundayBonus: "(Sonntag)",
+    weekUnavailable: "Die Wochenansicht ist noch nicht verfügbar.",
+    balanceHeader: (ist: string, soll: string) => `IST ${ist} / Soll ${soll} Std.`,
+    monthNames: [
+      "Januar",
+      "Februar",
+      "März",
+      "April",
+      "Mai",
+      "Juni",
+      "Juli",
+      "August",
+      "September",
+      "Oktober",
+      "November",
+      "Dezember",
+    ],
+  },
 } as const;
 
 export type Strings = typeof strings;

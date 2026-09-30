@@ -1,6 +1,5 @@
 import type { Database } from "@heute/domain";
 import { createClient } from "@supabase/supabase-js";
-import type { Database } from "@heute/domain";
 
 const memoryStorage = new Map<string, string>();
 
