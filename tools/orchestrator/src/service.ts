@@ -57,6 +57,7 @@ import {
   type ErrorCode,
 } from "./decisions.ts";
 import { buildAgent, type AgentSpec } from "./agents.ts";
+import type { AgentConfig } from "./config.ts";
 import type { Forge } from "./forge.ts";
 import type { PullRequest } from "./github.ts";
 import { LocalForge } from "./localForge.ts";
@@ -718,6 +719,61 @@ export class Orchestrator {
     if (assign.length > 0) await this.assignTasks(assign, built.id);
     else await this.refresh();
     return built.id;
+  }
+
+  // Changes an agent's name, CLI, model, brief, perimeter, effort or budget. Its identity
+  // (id, label, branch prefix, folder) never changes. The same checks as at creation apply.
+  async updateAgent(
+    id: string,
+    patch: Partial<
+      Omit<AgentSpec, "id" | "label" | "branchPrefix" | "worktree" | "effort" | "budgetUsd">
+    > & {
+      effort?: AgentSpec["effort"] | null;
+      budgetUsd?: number | null;
+    },
+  ): Promise<void> {
+    const cur = this.requireAgent(id);
+    if (this.running.has(id) || this.launching.has(id)) {
+      throw new Error(`L'agent ${id} travaille : attends la fin de son run ou arrête-le`);
+    }
+    const others = Object.fromEntries(Object.entries(this.config.agents).filter(([k]) => k !== id));
+    const spec: AgentSpec = {
+      id,
+      name: patch.name ?? cur.name,
+      cli: patch.cli ?? cur.cli,
+      model: patch.model ?? cur.model,
+      brief: patch.brief ?? cur.brief,
+      allowedPaths: patch.allowedPaths ?? cur.allowedPaths,
+      label: cur.label,
+      branchPrefix: cur.branchPrefix,
+      worktree: cur.worktree,
+      ...(("effort" in patch ? patch.effort : cur.effort)
+        ? { effort: ("effort" in patch ? patch.effort : cur.effort) ?? undefined }
+        : {}),
+      ...(("budgetUsd" in patch ? patch.budgetUsd : cur.budgetUsd)
+        ? { budgetUsd: ("budgetUsd" in patch ? patch.budgetUsd : cur.budgetUsd) ?? undefined }
+        : {}),
+    };
+    const built = buildAgent(spec, {
+      existing: others,
+      clis: this.config.clis,
+      repoDir: this.repoDir,
+      briefExists: (path) => existsSync(join(this.repoDir, path)),
+      models: this.models.get(spec.cli)?.map((m) => m.id),
+    });
+    if ("errors" in built) throw new Error(built.errors.join(" · "));
+    const { created: _created, ...rest } = built.agent;
+    void _created;
+    const next: AgentConfig = { ...rest, ...(cur.created ? { created: true } : {}) };
+    this.config.agents[id] = next;
+    (this.store.data.agentOverrides ??= {})[id] = next;
+    if (cur.created) (this.store.data.customAgents ??= {})[id] = next;
+    this.store.log(
+      "info",
+      `Agent ${id} modifié (${next.cli}, ${next.model}, effort ${next.effort ?? "défaut"})`,
+    );
+    this.store.save();
+    await this.refresh();
   }
 
   // Gives tasks to an agent: it becomes their only agent (the other agent labels are removed).
@@ -1561,6 +1617,8 @@ export class Orchestrator {
         manual: adapter.mode === "manual",
         model: a.model,
         label: a.label,
+        effort: a.effort,
+        budgetUsd: a.budgetUsd,
         brief: a.brief,
         allowedPaths: a.allowedPaths,
         created: a.created === true,

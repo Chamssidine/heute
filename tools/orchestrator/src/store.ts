@@ -77,6 +77,8 @@ export interface PersistedState {
   budgetExtra?: Record<string, number>;
   // Agents created from the dashboard: merged into the config at startup.
   customAgents?: Record<string, AgentConfig>;
+  // Changes made from the dashboard to any agent (also those of config.json): reapplied at startup.
+  agentOverrides?: Record<string, AgentConfig>;
   // Per branch: the commit the orchestrator already validated (typecheck, lint, tests) and the
   // log. The review reuses it instead of running everything a second time.
   validated?: Record<string, { sha: string; log: string }>;
