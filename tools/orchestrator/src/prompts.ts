@@ -19,12 +19,13 @@ export function taskPrompt(
   issue: number,
   branch: string,
   resume = false,
+  base = "main",
 ): string {
   const start = resume
     ? `La branche ${branch} est déjà extraite : elle contient le travail poussé par un run précédent
-qui a été interrompu. Commence par \`git log --oneline origin/main..HEAD\` et
-\`git diff --stat origin/main\`, puis reprends là où il s'est arrêté, sans refaire ce qui est fait.`
-    : `origin/main est déjà extrait, arbre propre. Crée ta branche : \`git switch -c ${branch}\`.`;
+qui a été interrompu. Commence par \`git log --oneline origin/${base}..HEAD\` et
+\`git diff --stat origin/${base}\`, puis reprends là où il s'est arrêté, sans refaire ce qui est fait.`
+    : `origin/${base} est déjà extrait, arbre propre. Crée ta branche : \`git switch -c ${branch}\`.`;
   return `Tu es l'agent ${id} (${agent.name}) du projet Heute.
 ${AUTONOMY}
 
@@ -37,7 +38,7 @@ Tâche : issue #${issue}. Lis-la avec \`gh issue view ${issue}\`.
 2. Réalise l'issue, uniquement dans tes chemins autorisés. Après chaque étape qui compile,
    commite et pousse (\`git push -u origin ${branch}\`) : si tu es interrompu, ton travail est repris.
 3. Lance les validations demandées par l'issue.
-4. \`git push -u origin ${branch}\`, puis \`gh pr create --base main --head ${branch}\`
+4. \`git push -u origin ${branch}\`, puis \`gh pr create --base ${base} --head ${branch}\`
    avec un titre « <ID>: … » et un corps qui commence par « Closes #${issue} »,
    suivi des fichiers modifiés et de la sortie des validations.
 5. Terminer UNIQUEMENT par un JSON (sur une seule ligne ou non) :
@@ -56,6 +57,7 @@ export function fixPrompt(
   pr: number,
   branch: string,
   feedback: string,
+  base = "main",
 ): string {
   return `Tu es l'agent ${id} (${agent.name}) du projet Heute.
 ${AUTONOMY}
@@ -68,6 +70,7 @@ ${feedback}
 
 Étapes :
 1. Corrige, uniquement dans tes chemins autorisés. Si un fichier hors périmètre a été modifié, annule ce changement.
+   Si un conflit de fusion avec ${base} est signalé, résous-le : \`git status\`, édite les fichiers (supprime les marqueurs de conflit), \`git add\`, \`git commit\`.
 2. Relance les validations de l'issue.
 3. \`git push\`, puis \`gh pr comment ${pr}\` avec ce que tu as corrigé et la sortie des validations.
 4. Terminer UNIQUEMENT par un JSON :

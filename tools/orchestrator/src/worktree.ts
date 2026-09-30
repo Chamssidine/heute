@@ -63,3 +63,56 @@ export async function ensureWorktree(repoDir: string, dir: string): Promise<void
   if (existsSync(dir)) return;
   await git(repoDir, ["worktree", "add", "--detach", dir, "origin/main"]);
 }
+
+async function gitOutput(cwd: string, args: string[]): Promise<{ code: number; out: string }> {
+  const result = await exec("git", args, { cwd, timeoutMs: 120_000 });
+  return { code: result.code, out: (result.stdout + result.stderr).trim() };
+}
+
+// Brings `base` into the branch checked out in `dir`. A clean merge is pushed; on conflicts the
+// markers are left in the files for the agent to resolve (it may run git add / commit / push).
+export async function syncWithBase(
+  dir: string,
+  base: string,
+): Promise<"up-to-date" | "merged" | "conflict"> {
+  await git(dir, ["fetch", "--prune", "origin"]);
+  const merge = await gitOutput(dir, ["merge", `origin/${base}`, "--no-edit"]);
+  if (merge.code === 0) {
+    if (/Already up to date/i.test(merge.out)) return "up-to-date";
+    await git(dir, ["push", "origin", "HEAD"]);
+    return "merged";
+  }
+  const unmerged = await gitOutput(dir, ["diff", "--name-only", "--diff-filter=U"]);
+  if (unmerged.out === "") throw new Error(`git merge origin/${base} (${dir}) : ${merge.out}`);
+  return "conflict";
+}
+
+// Keeps `target` up to date with `source` (e.g. dev with main after a hotfix), from a detached
+// checkout in `dir`. Returns false when there are conflicts: a human must resolve those.
+export async function fastForwardInto(
+  dir: string,
+  target: string,
+  source: string,
+): Promise<boolean> {
+  await git(dir, ["fetch", "--prune", "origin"]);
+  await git(dir, ["reset", "--hard"]);
+  await git(dir, ["checkout", "--detach", `origin/${target}`]);
+  const merge = await gitOutput(dir, ["merge", `origin/${source}`, "--no-edit"]);
+  if (merge.code !== 0) {
+    await gitOutput(dir, ["merge", "--abort"]);
+    return false;
+  }
+  await git(dir, ["push", "origin", `HEAD:${target}`]);
+  return true;
+}
+
+// Commits on `head` that `base` does not have yet.
+export async function aheadCount(dir: string, base: string, head: string): Promise<number> {
+  const r = await gitOutput(dir, ["rev-list", "--count", `origin/${base}..origin/${head}`]);
+  if (r.code !== 0) throw new Error(`git rev-list (${dir}) : ${r.out}`);
+  return Number(r.out);
+}
+
+export async function fetchOrigin(dir: string): Promise<void> {
+  await git(dir, ["fetch", "--prune", "origin"]);
+}

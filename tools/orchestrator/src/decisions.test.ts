@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   decideReview,
+  failureStreak,
+  needsReview,
   isManualRunDone,
   nextIssue,
   parseDependencies,
@@ -126,4 +128,18 @@ test("quota: reads the reset delay given by the provider (real agy message)", ()
 test("quota: without a reset time, waits one hour; a normal run is not a quota stop", () => {
   assert.equal(quotaResetDelayMs("Error: usage limit reached"), 60 * 60_000);
   assert.equal(quotaResetDelayMs('{"event":"result","result":{"status":"SUCCESS"}}'), undefined);
+});
+
+test("autopilot: failures are counted since the last PR, quota stops are ignored", () => {
+  assert.equal(failureStreak(["PR #1", "aucune PR", "aucune PR (BLOCKED)"]), 2);
+  assert.equal(failureStreak(["aucune PR", "PR #2", "aucune PR"]), 1);
+  assert.equal(failureStreak(["aucune PR", "quota épuisé", "interrompu (x)", "aucune PR"]), 2);
+  assert.equal(failureStreak([]), 0);
+});
+
+test("autopilot: a PR without status label waits for its review", () => {
+  assert.equal(needsReview([]), true);
+  assert.equal(needsReview(["agent:A"]), true);
+  assert.equal(needsReview(["changements"]), false);
+  assert.equal(needsReview(["en-revue"]), false);
 });

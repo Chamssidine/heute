@@ -80,6 +80,9 @@ export function startServer(port: number, orchestrator: Orchestrator, store: Sto
           case "launch":
             await orchestrator.launch(text("agent"));
             break;
+          case "autopilot":
+            orchestrator.setAutopilot(body["enabled"] === true);
+            break;
           case "stop":
             await orchestrator.stop(text("agent"));
             break;

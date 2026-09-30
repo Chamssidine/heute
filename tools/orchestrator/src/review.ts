@@ -134,7 +134,12 @@ export async function reviewPullRequest(req: ReviewRequest): Promise<ReviewResul
     validationsPassed: true,
     reviewerApproved: verdict.approve,
   });
-  return { ...decision, reviewerComments: verdict.comments, validationLog: validations.log, m: usage };
+  return {
+    ...decision,
+    reviewerComments: verdict.comments,
+    validationLog: validations.log,
+    m: usage,
+  };
 }
 
 export function reviewComment(reviewerId: string, result: ReviewResult): string {

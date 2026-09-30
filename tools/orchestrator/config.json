@@ -1,5 +1,13 @@
 {
   "repo": "Chamssidine/heute",
+  "baseBranch": "dev",
+  "productionBranch": "main",
+  "autopilot": {
+    "launchAgents": true,
+    "autoFix": true,
+    "failureLimit": 4,
+    "dailyBudgetUsd": 25
+  },
   "port": 4000,
   "refreshSeconds": 60,
   "runTimeoutMinutes": 45,
@@ -27,9 +35,18 @@
     }
   },
   "reviewers": {
-    "claude": { "cli": "claude", "model": "claude-opus-5-5" },
-    "codex": { "cli": "codex", "model": "gpt-5-codex" },
-    "gemini": { "cli": "agy", "model": "gemini-3.1-pro-high" }
+    "claude": {
+      "cli": "claude",
+      "model": "claude-opus-5-5"
+    },
+    "codex": {
+      "cli": "codex",
+      "model": "gpt-5-codex"
+    },
+    "gemini": {
+      "cli": "agy",
+      "model": "gemini-3.1-pro-high"
+    }
   },
   "defaultReviewer": "claude",
   "reviewWorktree": "C:\\dev\\heute-review",
@@ -41,6 +58,28 @@
       "worktree": "C:\\dev\\heute-a",
       "label": "agent:A",
       "branchPrefix": "a",
+      "brief": "docs/agents/admin.md",
+      "allowedPaths": [
+        "supabase/migrations/**",
+        "supabase/tests/**",
+        "supabase/seed.sql",
+        "supabase/config.toml",
+        "apps/admin/**",
+        "packages/domain/src/{codes,labels,validation,errors,roles}/**",
+        "packages/domain/src/database.types.ts",
+        "packages/domain/src/index.ts",
+        "docs/adr/**",
+        "package.json",
+        "package-lock.json"
+      ]
+    },
+    "A2": {
+      "name": "Admin + backend (2)",
+      "cli": "claude",
+      "model": "claude-sonnet-5-5",
+      "worktree": "C:\\dev\\heute-a2",
+      "label": "agent:A2",
+      "branchPrefix": "a2",
       "brief": "docs/agents/admin.md",
       "allowedPaths": [
         "supabase/migrations/**",
