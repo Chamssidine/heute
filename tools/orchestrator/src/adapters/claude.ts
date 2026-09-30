@@ -1,35 +1,45 @@
 import { brief, parseJson, withExtra, type CliAdapter } from "./types.ts";
 
 // Agents may edit files and run the project's own tools; merging stays with the human.
+// Agents work locally: no GitHub, no push, no network git. The orchestrator pushes and opens the PR.
+const GIT_LOCAL = [
+  "status",
+  "diff",
+  "log",
+  "show",
+  "add",
+  "rm",
+  "mv",
+  "commit",
+  "switch",
+  "checkout",
+  "restore",
+  "rev-parse",
+  "branch",
+  "stash",
+].map((c) => `Bash(git ${c}:*)`);
 const AGENT_TOOLS = [
   "Read",
   "Edit",
   "Write",
   "Glob",
   "Grep",
-  "WebFetch",
-  "WebSearch",
-  "Bash(git:*)",
+  ...GIT_LOCAL,
   "Bash(npm:*)",
   "Bash(npx:*)",
   "Bash(node:*)",
   "Bash(supabase:*)",
-  "Bash(gh issue view:*)",
-  "Bash(gh issue comment:*)",
-  "Bash(gh pr create:*)",
-  "Bash(gh pr view:*)",
-  "Bash(gh pr diff:*)",
-  "Bash(gh pr comment:*)",
 ];
-const AGENT_DENIED = ["Bash(gh pr merge:*)", "Bash(gh api:*)", "Bash(git push --force:*)"];
-const REVIEWER_TOOLS = [
-  "Read",
-  "Glob",
-  "Grep",
-  "Bash(gh pr view:*)",
-  "Bash(gh pr diff:*)",
-  "Bash(gh issue view:*)",
+const AGENT_DENIED = [
+  "Bash(gh:*)",
+  "Bash(git push:*)",
+  "Bash(git fetch:*)",
+  "Bash(git pull:*)",
+  "Bash(git remote:*)",
+  "Bash(git reset:*)",
 ];
+// The reviewer is given the diff and the issue as files: it needs no shell command.
+const REVIEWER_TOOLS = ["Read", "Glob", "Grep"];
 
 export const claude: CliAdapter = {
   id: "claude",
