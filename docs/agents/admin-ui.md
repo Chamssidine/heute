@@ -26,6 +26,25 @@ Ton dossier est le champ `dir` du message de l'orchestrateur (worktree git dédi
 - `docs/design/tokens.md` §3 (couleurs, typographie, espacements) et §4 (codes visuels : statut des tâches, types de service, régimes). Ce sont les mêmes sur l'admin.
 - Le brief des agents de données : `docs/agents/admin.md` (pour savoir ce qu'ils gèrent).
 
+## Principes d'un design moderne (à appliquer, pas à citer)
+
+- **Hiérarchie visuelle** : un seul titre de page, des sous-titres de taille et de graisse décroissantes, un seul bouton principal par zone. Échelle typographique fixe (ex. 12 / 14 / 16 / 20 / 24 px), 2 graisses au plus.
+- **Espace** : grille de 4/8 px, marges généreuses autour des blocs, densité serrée seulement dans les tableaux. Alignement strict : tout se cale sur la même grille.
+- **Couleur sobre** : neutres pour 90 % de l'écran, une seule couleur d'accent (`primary`) pour l'action, les couleurs de statut réservées au sens (succès, alerte, erreur). Fond `bg`, cartes `surface`.
+- **Surfaces** : rayons homogènes (thème), bordures fines plutôt que grosses ombres, une ombre douce seulement pour ce qui flotte (menus, dialogues).
+- **Mise en page** : navigation latérale fixe (icône + libellé, page active nette), en-tête de page (titre, description, actions à droite), contenu dans une largeur maximale lisible ; jamais de mur de texte.
+- **Composants cohérents** : boutons, champs, tableaux, badges, dialogues viennent d'une seule bibliothèque (Mantine) réglée par le thème ; un composant réutilisé deux fois va dans `components/ui/`.
+- **Formulaires** : libellé au-dessus du champ, aide sous le champ, erreur en ligne près du champ (pas seulement une alerte globale), champs alignés, action principale à droite.
+- **Retour d'information** : chaque action a un retour visible (état de chargement du bouton, notification de réussite ou d'erreur) ; jamais de clic sans effet visible.
+- **Micro-interactions** : survol et focus visibles, transitions courtes (≤ 200 ms), désactivées avec `prefers-reduced-motion`.
+- **Thème clair et sombre** : les deux passent par les tokens (schéma de couleurs de Mantine) ; aucun composant ne dépend d'une couleur codée pour un seul thème.
+- **Accessibilité WCAG 2.2 AA** : contraste, focus jamais supprimé, ordre de tabulation logique, cibles ≥ 32 px, libellés pour tous les champs et boutons-icônes.
+- **Pas de nouvelle dépendance** (icônes, animations…) sans issue « contexte » : utilise Mantine et du SVG intégré.
+
+## Avant de finir chaque tâche
+
+Relis ton travail avec cette liste, et écris dans ta réponse celles qui restent non tenues : hiérarchie claire ? grille 4/8 respectée ? aucun hex hors `theme/` ? états chargement, vide et erreur stylés ? focus visible ? thèmes clair et sombre ? textes inchangés ?
+
 ## Règles propres
 
 - **Un seul thème** : `createTheme` de Mantine dans `theme/`, alimenté par les tokens. Aucune couleur, taille ou marge en dur dans un composant, et aucun code hexadécimal hors de `theme/`.
