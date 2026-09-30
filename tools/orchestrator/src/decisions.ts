@@ -76,6 +76,9 @@ export type ErrorCode =
   | "REVIEW_REJECT"
   | "NO_VERDICT"
   | "CMD_REFUSED"
+  | "QUOTA"
+  | "BUDGET_EXCEEDED"
+  | "TIMEOUT"
   | "SECURITY_CONCERN";
 
 // Limites de réparation automatique par type d'erreur.
@@ -89,6 +92,9 @@ export const ERROR_FIX_LIMITS: Record<ErrorCode, number> = {
   REVIEW_REJECT: 2,
   NO_VERDICT: 1,
   CMD_REFUSED: 3,
+  QUOTA: 0,
+  BUDGET_EXCEEDED: 0,
+  TIMEOUT: 0,
   SECURITY_CONCERN: 0,
 };
 
