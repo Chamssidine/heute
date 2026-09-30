@@ -44,6 +44,8 @@ export interface ReviewRecord {
   reviewer: string;
   reasons: string[];
   reviewerComments: string[];
+  // Output of the failing check, given to the agent that has to fix it.
+  validationLog?: string;
   at: string;
   fixRounds: number;
   m?: UsageMetrics;

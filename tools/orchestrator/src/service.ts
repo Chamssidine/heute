@@ -311,6 +311,7 @@ export class Orchestrator {
     const errors = [
       ...reasons.map((msg) => ({ src: "review", msg })),
       ...(review?.reviewerComments ?? []).map((msg) => ({ src: "reviewer", msg })),
+      ...(review?.validationLog ? [{ src: "checks", msg: review.validationLog }] : []),
       ...(sync === "conflict"
         ? [
             {
@@ -434,6 +435,7 @@ export class Orchestrator {
         reviewerId: effectiveReviewerId,
         pr,
         headRef: this.headRef(pr.headRefName),
+        baseRef: this.baseRef(),
         fetch: !this.isLocal(),
         validated:
           this.store.data.validated?.[pr.headRefName]?.sha === pr.headRefOid
@@ -461,6 +463,7 @@ export class Orchestrator {
         reviewer: effectiveReviewerId,
         reasons: result.reasons,
         reviewerComments: result.reviewerComments,
+        validationLog: result.outcome === "ready" ? undefined : result.validationLog.slice(-1800),
         at: new Date().toISOString(),
         fixRounds,
         m: result.m,
