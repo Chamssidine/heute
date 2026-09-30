@@ -40,7 +40,10 @@ Tâche : issue #${issue}. Lis-la avec \`gh issue view ${issue}\`.
 4. \`git push -u origin ${branch}\`, puis \`gh pr create --base main --head ${branch}\`
    avec un titre « <ID>: … » et un corps qui commence par « Closes #${issue} »,
    suivi des fichiers modifiés et de la sortie des validations.
-5. Arrête-toi. Ne merge jamais.
+5. Terminer UNIQUEMENT par un JSON (sur une seule ligne ou non) :
+   {"v":1, "ok": true|false, "e": [codes d'erreur si ok=false], "val": {"tc": true, "lint": true, "test": true}}
+   Exemple : {"v":1, "ok": true, "val": {"tc": true, "lint": true, "test": true}}
+6. Arrête-toi. Ne merge jamais.
 
 Si l'issue est impossible ou contradictoire : \`gh issue comment ${issue}\` avec la raison,
 puis arrête-toi sans ouvrir de PR.`;
@@ -67,7 +70,9 @@ ${feedback}
 1. Corrige, uniquement dans tes chemins autorisés. Si un fichier hors périmètre a été modifié, annule ce changement.
 2. Relance les validations de l'issue.
 3. \`git push\`, puis \`gh pr comment ${pr}\` avec ce que tu as corrigé et la sortie des validations.
-4. Arrête-toi. Ne merge jamais.`;
+4. Terminer UNIQUEMENT par un JSON :
+   {"v":1, "ok": true|false, "e": [codes d'erreur si ok=false], "val": {"tc": true|false, "lint": true|false, "test": true|false}}
+5. Arrête-toi. Ne merge jamais.`;
 }
 
 export function reviewPrompt(pr: number, diffFile: string, issueFile: string | undefined): string {
