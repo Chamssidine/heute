@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe("routes expo-router (P2-03b [U])", () => {
-  const tabsDir = path.join(__dirname, "(tabs)");
+  const appDir = path.join(__dirname, "app");
+  const tabsDir = path.join(appDir, "(tabs)");
 
   it("src/app/(tabs)/ ne contient que _layout.tsx et les six écrans", () => {
     const files = fs.readdirSync(tabsDir).sort();
@@ -22,6 +23,11 @@ describe("routes expo-router (P2-03b [U])", () => {
     ].sort();
 
     assert.deepEqual(files, expectedFiles);
+  });
+
+  it("src/app/ ne contient aucun fichier de test ni module d'aide : chaque fichier y devient une route", () => {
+    const files = fs.readdirSync(appDir).filter((f) => f !== "(tabs)");
+    assert.deepEqual(files.sort(), ["_layout.tsx", "anmeldung.tsx", "index.tsx"]);
   });
 
   it("aucun module d'aide (icons, tab-icons) n'est présent dans src/app/(tabs)/", () => {
