@@ -228,5 +228,62 @@ describe("features/kitchen (P2-06 [L])", () => {
       assert.equal(state.status, "empty");
       assert.equal(state.data, undefined);
     });
+
+    describe("Indicateurs changed et previous pour Küche et Menü (P4-07 [L])", () => {
+      it("première ouverture : rien n'est marqué (changed: false, previous: undefined)", () => {
+        const state = useKitchenDay("2026-09-30", { lastSeen: null });
+        assert.equal(state.status, "success");
+        assert.ok(state.data);
+
+        // Totaux
+        assert.equal(state.data.totals.abend.changed, false);
+        assert.equal(state.data.totals.abend.previous, undefined);
+        assert.equal(state.data.totals.mittag.changed, false);
+
+        // Menu
+        assert.equal(state.data.menu.abend?.changed, false);
+        assert.equal(state.data.menu.abend?.previous, undefined);
+
+        // Groupes
+        for (const group of state.data.groups) {
+          for (const meal of group.meals) {
+            assert.equal(meal.changed, false);
+          }
+        }
+      });
+
+      it("éléments modifiés postérieurement à lastSeen : portent changed: true et previous", () => {
+        // Dernière consultation à 13:00 Berlin, modifications effectuées à 14:05 Berlin
+        const lastSeen = "2026-09-30T11:00:00Z";
+        const state = useKitchenDay("2026-09-30", { lastSeen });
+        assert.equal(state.status, "success");
+        assert.ok(state.data);
+
+        // Total Abend modifié de 13 à 25
+        assert.equal(state.data.totals.abend.changed, true);
+        assert.equal(state.data.totals.abend.previous?.total, 13);
+
+        // Menu Abend modifié (nouvelle recette)
+        assert.equal(state.data.menu.abend?.changed, true);
+        assert.equal(state.data.menu.abend?.previous?.mainDish, "Hähnchenschenkel");
+
+        // Les éléments non modifiés ont changed: false
+        assert.equal(state.data.totals.mittag.changed, false);
+        assert.equal(state.data.menu.mittag?.changed, false);
+      });
+
+      it("consultation postérieure à updated_at : changed redevient false sans previous", () => {
+        // Dernière consultation à 14:30 Berlin (après la modification de 14:05 Berlin)
+        const lastSeen = "2026-09-30T12:30:00Z";
+        const state = useKitchenDay("2026-09-30", { lastSeen });
+        assert.equal(state.status, "success");
+        assert.ok(state.data);
+
+        assert.equal(state.data.totals.abend.changed, false);
+        assert.equal(state.data.totals.abend.previous, undefined);
+        assert.equal(state.data.menu.abend?.changed, false);
+        assert.equal(state.data.menu.abend?.previous, undefined);
+      });
+    });
   });
 });

@@ -220,5 +220,48 @@ describe("features/today (P2-07 [L])", () => {
       assert.equal(state.status, "empty");
       assert.equal(state.data, undefined);
     });
+
+    describe("Indicateurs changed et previous dans Heute (P4-07 [L])", () => {
+      it("première ouverture : rien n'est marqué (changed: false, changeNotice: null)", () => {
+        const state = useToday("2026-09-30", { lastSeen: null });
+        assert.equal(state.status, "success");
+        assert.ok(state.data);
+
+        // Repas du soir
+        assert.equal(state.data.guests.abend.changed, false);
+        assert.equal(state.data.guests.abend.changeNotice, null);
+
+        // Menu
+        assert.equal(state.data.menu.changed, false);
+        assert.equal(state.data.menu.abend?.changed, false);
+      });
+
+      it("repas et menu modifiés : portent changed: true, highlight et la mention Geändert", () => {
+        // Dernière consultation à 13:00 Berlin, modification à 14:05 Berlin
+        const state = useToday("2026-09-30", { lastSeen: "2026-09-30T11:00:00Z" });
+        assert.equal(state.status, "success");
+        assert.ok(state.data);
+
+        // Repas Abend
+        assert.equal(state.data.guests.abend.changed, true);
+        assert.equal(state.data.guests.abend.highlight, true);
+        assert.equal(state.data.guests.abend.changeNotice, "Geändert 14:05 · vorher 13");
+        assert.deepEqual(state.data.guests.abend.previous, { count: 13 });
+
+        // Menu Abend
+        assert.equal(state.data.menu.abend?.changed, true);
+        assert.equal(state.data.menu.abend?.previous?.mainDish, "Hähnchenschenkel");
+      });
+
+      it("consultation postérieure : le marquage disparaît (changed: false, changeNotice: null)", () => {
+        const state = useToday("2026-09-30", { lastSeen: "2026-09-30T12:30:00Z" });
+        assert.equal(state.status, "success");
+        assert.ok(state.data);
+
+        assert.equal(state.data.guests.abend.changed, false);
+        assert.equal(state.data.guests.abend.changeNotice, null);
+        assert.equal(state.data.menu.abend?.changed, false);
+      });
+    });
   });
 });

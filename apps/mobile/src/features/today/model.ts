@@ -1,4 +1,6 @@
 import type { ShiftInput } from "@heute/domain";
+import type { ChangeIndicator } from "../../lib/query/lastSeen/index.ts";
+import { strings } from "../../strings/index.ts";
 import type { AppRole, Department } from "../auth/model.ts";
 import {
   formatDietsSummary,
@@ -6,8 +8,10 @@ import {
   type KitchenDay,
   type KitchenDayMenu,
   type KitchenTotals,
+  type MealTotal,
   type MealType,
   type MenuItem,
+  type MenuItemPrevious,
 } from "../kitchen/model.ts";
 import { toShiftDay, type ShiftDay } from "../shifts/model.ts";
 import {
@@ -74,7 +78,9 @@ export interface TodayTasks {
 /**
  * Résumé d'un repas du jour pour la carte « Gäste heute ».
  */
-export interface TodayMealSummary {
+export interface TodayMealSummary extends ChangeIndicator<{
+  count?: number;
+}> {
   meal: MealType;
   label: string;
   count: number;
@@ -101,7 +107,7 @@ export interface TodayGuests {
 /**
  * Détail d'un repas pour la carte « Menü ».
  */
-export interface TodayMenuItem {
+export interface TodayMenuItem extends ChangeIndicator<MenuItemPrevious> {
   label: string;
   mainDish: string;
   vegVariant: string | null;
@@ -114,6 +120,7 @@ export interface TodayMenuItem {
  */
 export interface TodayMenu {
   disclaimer: string;
+  changed: boolean;
   mittag: TodayMenuItem | null;
   abend: TodayMenuItem | null;
   noLunch: boolean;
@@ -178,6 +185,21 @@ export function getTodayCardOrder(
   }
 
   return [...HOUSEKEEPING_BFD_CARD_ORDER];
+}
+
+/**
+ * Heure « HH:MM » (Europe/Berlin) d'un instant ISO, ou null s'il est absent ou invalide.
+ */
+function formatBerlinTime(iso?: string): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat("de-DE", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Europe/Berlin",
+  }).format(d);
 }
 
 /**
@@ -298,6 +320,14 @@ export function createTodayGuests(kitchenDay?: KitchenDay | null): TodayGuests {
   const lpCount = totals.lunchpaket.total;
   const grCount = totals.grill.total;
 
+  const formatChangeNotice = (total: MealTotal): string | null => {
+    const count = total.previous?.total;
+    if (count == null) return null;
+    const time = formatBerlinTime(total.updated_at);
+    if (time === null) return null;
+    return strings.meals.modified(time, count);
+  };
+
   const fruehSummary: TodayMealSummary = {
     meal: "frueh",
     label: "Früh",
@@ -311,6 +341,11 @@ export function createTodayGuests(kitchenDay?: KitchenDay | null): TodayGuests {
             al: totals.frueh.al,
           })
         : null,
+    highlight: Boolean(totals.frueh.changed),
+    changeNotice: totals.frueh.changed ? formatChangeNotice(totals.frueh) : null,
+    updated_at: totals.frueh.updated_at,
+    changed: totals.frueh.changed,
+    previous: totals.frueh.previous ? { count: totals.frueh.previous.total } : undefined,
   };
 
   const mittagSummary: TodayMealSummary = {
@@ -328,6 +363,11 @@ export function createTodayGuests(kitchenDay?: KitchenDay | null): TodayGuests {
             al: totals.mittag.al,
           })
         : null,
+    highlight: Boolean(totals.mittag.changed),
+    changeNotice: totals.mittag.changed ? formatChangeNotice(totals.mittag) : null,
+    updated_at: totals.mittag.updated_at,
+    changed: Boolean(totals.mittag.changed),
+    previous: totals.mittag.previous ? { count: totals.mittag.previous.total } : undefined,
   };
 
   const abendSummary: TodayMealSummary = {
@@ -345,8 +385,11 @@ export function createTodayGuests(kitchenDay?: KitchenDay | null): TodayGuests {
             al: totals.abend.al,
           })
         : null,
-    highlight: totals.abend.total > 0,
-    changeNotice: null,
+    highlight: totals.abend.changed !== undefined ? totals.abend.changed : totals.abend.total > 0,
+    changeNotice: totals.abend.changed ? formatChangeNotice(totals.abend) : null,
+    updated_at: totals.abend.updated_at,
+    changed: Boolean(totals.abend.changed),
+    previous: totals.abend.previous ? { count: totals.abend.previous.total } : undefined,
   };
 
   // Résumé condensé en une ligne selon screens.md §6.1
@@ -388,6 +431,9 @@ export function formatTodayMenuItem(item: MenuItem | null, label: string): Today
     vegVariant: item.vegVariant,
     formatted,
     dessert: item.dessert,
+    updated_at: item.updated_at,
+    changed: item.changed,
+    previous: item.previous,
   };
 }
 
@@ -407,6 +453,7 @@ export function createTodayMenu(kitchenDay?: KitchenDay | null): TodayMenu {
     noLunch: kitchenDay?.noLunch ?? mittag == null,
     noDinner: kitchenDay?.noDinner ?? abend == null,
     raw: menu,
+    changed: Boolean(mittag?.changed) || Boolean(abend?.changed),
   };
 }
 

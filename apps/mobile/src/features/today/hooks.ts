@@ -21,6 +21,7 @@ export interface UseTodayOptions {
   shift?: ShiftDay | null;
   tasks?: TasksDay | null;
   kitchen?: KitchenDay | null;
+  lastSeen?: string | null;
 }
 
 /**
@@ -40,10 +41,10 @@ export interface UseTodayOptions {
  */
 export function useToday(date: string, options?: UseTodayOptions): ViewState<TodayView> {
   const auth = useAuth();
-  const kitchenState = useKitchenDay(date);
+  const kitchenState = useKitchenDay(date, { lastSeen: options?.lastSeen });
   const tasksState = useTasksDay(date);
   const month = date.slice(0, 7);
-  const shiftsState = useMyShifts(month);
+  const shiftsState = useMyShifts(month, { lastSeen: options?.lastSeen });
 
   // 1. Détermination du rôle ou département de l'utilisateur
   const effectiveRoleOrDept: UserRoleOrDepartment = {

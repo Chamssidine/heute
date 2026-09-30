@@ -1,14 +1,23 @@
 import type { ViewState } from "../../lib/query/index.ts";
+import { getLastSeenSync } from "../../lib/query/lastSeen/index.ts";
 import type { MyShiftsView } from "./model.ts";
-import { myShiftsFixture } from "./model.ts";
+import { applyMyShiftsChanges, myShiftsFixture } from "./model.ts";
+
+export interface UseMyShiftsOptions {
+  lastSeen?: string | null;
+}
 
 /**
- * Hook provisoire pour « Mein Dienstplan ».
+ * Hook pour « Mein Dienstplan ».
  * Renvoie un ViewState<MyShiftsView> basé sur la fixture d'un mois réaliste,
- * ou status: "empty" pour tout mois différent de la fixture,
- * en attendant le branchement réel sur Supabase une fois les policies RLS livrées.
+ * en appliquant les indicateurs de changement (changed & previous) par rapport à lastSeen.
+ * - Première ouverture (lastSeen null) : rien n'est marqué (règle d'acceptation 3).
+ * - Élément avec updated_at > lastSeen : porte changed: true et previous (règle d'acceptation 2).
  */
-export function useMyShifts(month: string): ViewState<MyShiftsView> {
+export function useMyShifts(month: string, options?: UseMyShiftsOptions): ViewState<MyShiftsView> {
+  const effectiveLastSeen =
+    options?.lastSeen !== undefined ? options.lastSeen : getLastSeenSync("dienstplan");
+
   if (month !== myShiftsFixture.month) {
     return {
       status: "empty",
@@ -17,6 +26,6 @@ export function useMyShifts(month: string): ViewState<MyShiftsView> {
 
   return {
     status: "success",
-    data: myShiftsFixture,
+    data: applyMyShiftsChanges(myShiftsFixture, effectiveLastSeen),
   };
 }

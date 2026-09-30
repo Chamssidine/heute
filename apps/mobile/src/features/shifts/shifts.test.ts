@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { useMyShifts } from "./hooks.ts";
 import {
+  applyMyShiftsChanges,
   formatShiftHours,
   myShiftsFixture,
   SHIFT_BADGE_LABELS,
@@ -182,7 +183,7 @@ describe("features/shifts (P2-04 [L])", () => {
     it("renvoie un ViewState<MyShiftsView> avec statut success pour le mois de la fixture", () => {
       const state = useMyShifts("2026-10");
       assert.equal(state.status, "success");
-      assert.equal(state.data, myShiftsFixture);
+      assert.deepEqual(state.data, applyMyShiftsChanges(myShiftsFixture, null));
       assert.equal(state.data.days.length, 31);
       assert.equal(state.data.ist, 11040);
       assert.equal(state.data.soll, 10440);
@@ -192,6 +193,56 @@ describe("features/shifts (P2-04 [L])", () => {
     it("renvoie un statut empty si le mois demandé n'est pas celui de la fixture", () => {
       const state = useMyShifts("2026-11");
       assert.equal(state.status, "empty");
+    });
+
+    describe("Indicateurs changed et previous (P4-07 [L])", () => {
+      it("première ouverture : rien n'est marqué (changed: false, previous: undefined)", () => {
+        const state = useMyShifts("2026-10", { lastSeen: null });
+        assert.equal(state.status, "success");
+        assert.ok(state.data);
+
+        // Aucun jour ne doit être marqué changed: true
+        for (const day of state.data.days) {
+          assert.equal(day.changed, false);
+          assert.equal(day.previous, undefined);
+        }
+      });
+
+      it("élément modifié postérieurement à lastSeen : porte changed: true et previous", () => {
+        // Dernière consultation antérieure à la modification du 14 octobre (14:05)
+        const lastSeen = "2026-10-01T10:00:00Z";
+        const state = useMyShifts("2026-10", { lastSeen });
+        assert.equal(state.status, "success");
+        assert.ok(state.data);
+
+        const modifiedDay = state.data.days.find((d) => d.date === "2026-10-14");
+        assert.ok(modifiedDay, "Jour du 14 octobre présent");
+        assert.equal(modifiedDay.changed, true);
+        assert.deepEqual(modifiedDay.previous, {
+          hours: "08:00–16:00",
+          label: "Dienst",
+          istMinutes: 450,
+        });
+
+        // Les autres jours non modifiés ont changed: false
+        const otherDay = state.data.days.find((d) => d.date === "2026-10-01");
+        assert.ok(otherDay);
+        assert.equal(otherDay.changed, false);
+        assert.equal(otherDay.previous, undefined);
+      });
+
+      it("consultation postérieure à updated_at : changed redevient false sans previous", () => {
+        // Dernière consultation postérieure à la modification (15:00 > 14:05)
+        const lastSeen = "2026-10-01T15:00:00Z";
+        const state = useMyShifts("2026-10", { lastSeen });
+        assert.equal(state.status, "success");
+        assert.ok(state.data);
+
+        const modifiedDay = state.data.days.find((d) => d.date === "2026-10-14");
+        assert.ok(modifiedDay);
+        assert.equal(modifiedDay.changed, false);
+        assert.equal(modifiedDay.previous, undefined);
+      });
     });
   });
 });

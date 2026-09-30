@@ -133,7 +133,8 @@ export function formatTeamShiftHours(shift: {
 
   if (normalizedType === "td" && shift.start1 != null && shift.end1 != null) {
     const slot1 = `${formatHHMM(shift.start1)}–${formatHHMM(shift.end1)}`;
-    if (shift.start2 != null && shift.end2 != null) {
+    // La base peut renvoyer 0/0 pour un second créneau absent.
+    if (shift.start2 != null && shift.end2 != null && shift.end2 > shift.start2) {
       const slot2 = `${formatHHMM(shift.start2)}–${formatHHMM(shift.end2)}`;
       return `${slot1} · ${slot2}`;
     }
