@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Group, Loader, Stack, Table, Text, TextInput, Title } from "@mantine/core";
+import { Button, Group, Stack, Table, Text, TextInput, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 import {
   currentWeekStart,
@@ -15,6 +15,16 @@ import {
 } from "../lib/menu.ts";
 import { getSupabase } from "../lib/supabase.ts";
 import { de } from "../strings/de.ts";
+import { EmptyState } from "./ui/EmptyState.tsx";
+import { ErrorState } from "./ui/ErrorState.tsx";
+import { LoadingState } from "./ui/LoadingState.tsx";
+
+const DAY_COL = 96;
+
+// Date du jour en Europe/Berlin (AGENTS.md), au format YYYY-MM-DD comme les dates de la semaine.
+function berlinToday(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(new Date());
+}
 
 type Menu = Map<string, MenuDraft>;
 type LoadState = { status: "loading" } | { status: "error" } | { status: "ready"; menu: Menu };
@@ -73,6 +83,7 @@ export function MenuGrid() {
   }, [weekStart]);
 
   const dates = weekDates(weekStart);
+  const today = berlinToday();
 
   return (
     <Stack>
@@ -96,25 +107,23 @@ export function MenuGrid() {
           ▶
         </Button>
       </Group>
-      {state.status === "loading" && (
-        <Group>
-          <Loader size="sm" />
-          <Text>{de.loading}</Text>
-        </Group>
-      )}
-      {state.status === "error" && (
-        <Alert color="red" role="alert">
-          {de.menu.loadError}
-        </Alert>
-      )}
+      {state.status === "loading" && <LoadingState label={de.loading} rows={7} />}
+      {state.status === "error" && <ErrorState message={de.menu.loadError} />}
       {state.status === "ready" && (
         <>
-          {state.menu.size === 0 && <Text>{de.menu.empty}</Text>}
+          {state.menu.size === 0 && <EmptyState title={de.menu.empty} />}
           <Table.ScrollContainer minWidth={800}>
-            <Table withTableBorder withColumnBorders verticalSpacing="xs" fz="xs">
+            <Table
+              withColumnBorders
+              highlightOnHover={false}
+              verticalSpacing="xs"
+              fz="xs"
+              style={{ tableLayout: "fixed" }}
+              aria-label={de.nav.menu}
+            >
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th />
+                  <Table.Th w={DAY_COL} />
                   {MENU_MEALS.map((meal) => (
                     <Table.Th key={meal}>{de.menu[meal]}</Table.Th>
                   ))}
@@ -123,7 +132,18 @@ export function MenuGrid() {
               <Table.Tbody>
                 {dates.map((date, i) => (
                   <Table.Tr key={date}>
-                    <Table.Th>
+                    <Table.Th
+                      scope="row"
+                      aria-current={date === today ? "date" : undefined}
+                      style={
+                        date === today
+                          ? {
+                              backgroundColor: "var(--mantine-color-primary-light)",
+                              boxShadow: "inset 4px 0 0 var(--mantine-color-primary-filled)",
+                            }
+                          : undefined
+                      }
+                    >
                       {WEEKDAYS[i]} {date.slice(8)}.{date.slice(5, 7)}.
                     </Table.Th>
                     {MENU_MEALS.map((meal) => (
