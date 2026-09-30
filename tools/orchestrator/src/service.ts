@@ -448,7 +448,7 @@ export class Orchestrator {
       const issue = this.issueOfBranch(pr.headRefName);
       if (this.taskBudgetExceeded(issue)) {
         const cost = this.taskCostUsd(issue);
-        const reason = `Budget tâche dépassé (${cost.toFixed(2)} $ / ${this.taskBudget().toFixed(2)} $)`;
+        const reason = `Budget tâche dépassé (${cost.toFixed(2)} $ / ${this.taskBudget(issue).toFixed(2)} $)`;
         await this.github.comment(
           prNumber,
           `### Relecture automatique : attention humaine requise\n\n- ${reason}`,
@@ -1362,20 +1362,49 @@ export class Orchestrator {
   }
 
   // Spend allowed per task (runs, corrections and reviews together), from config.json.
-  private taskBudget(): number {
-    return this.config.taskBudgetUsd ?? DEFAULT_TASK_BUDGET_USD;
+  private taskBudget(issue?: number): number {
+    const base = this.config.taskBudgetUsd ?? DEFAULT_TASK_BUDGET_USD;
+    return base + (issue === undefined ? 0 : (this.store.data.budgetExtra?.[String(issue)] ?? 0));
+  }
+
+  // The human grants more money to one task from the dashboard: no file to edit, no restart.
+  // The task, held back by the budget, goes back into the flow right away.
+  async extendBudget(issue: number, add: number): Promise<void> {
+    if (!Number.isFinite(add) || add <= 0 || add > 10)
+      throw new Error("Rallonge : entre 0 et 10 $");
+    const extra = (this.store.data.budgetExtra ??= {});
+    extra[String(issue)] = (extra[String(issue)] ?? 0) + add;
+    this.store.log(
+      "info",
+      `Budget de la tâche #${issue} étendu de ${add.toFixed(2)} $ (${this.taskBudget(issue).toFixed(2)} $ au total)`,
+    );
+    for (const pr of this.store.live.prs.filter(
+      (p) => this.issueOfBranch(p.headRefName) === issue,
+    )) {
+      const review = this.store.data.reviews[String(pr.number)];
+      // A verdict given only because of the budget is void: the PR is reviewed again.
+      if (review?.reviewer === "budget") {
+        const { [String(pr.number)]: _voided, ...others } = this.store.data.reviews;
+        void _voided;
+        this.store.data.reviews = others;
+      }
+      await this.github.setLabels(pr.number, [], [STATUS_LABELS.human]);
+    }
+    this.store.save();
+    await this.refresh();
+    void this.autopilotTick();
   }
 
   private assertTaskBudgetAvailable(issue: number | undefined): void {
     if (!this.taskBudgetExceeded(issue)) return;
     const cost = this.taskCostUsd(issue);
     throw new Error(
-      `Budget tâche dépassé (${cost.toFixed(2)} $ / ${this.taskBudget().toFixed(2)} $) : attente humaine requise`,
+      `Budget tâche dépassé (${cost.toFixed(2)} $ / ${this.taskBudget(issue).toFixed(2)} $) : étends le budget de la tâche depuis sa carte`,
     );
   }
 
   private taskBudgetExceeded(issue: number | undefined): boolean {
-    return issue !== undefined && this.taskCostUsd(issue) >= this.taskBudget();
+    return issue !== undefined && this.taskCostUsd(issue) >= this.taskBudget(issue);
   }
 
   private taskCostUsd(issue: number | undefined): number {
@@ -1547,6 +1576,8 @@ export class Orchestrator {
           ...p,
           agent: agentOfBranch(this.config, p.headRefName),
           issue: this.issueOfBranch(p.headRefName),
+          cost: this.taskCostUsd(this.issueOfBranch(p.headRefName)),
+          budget: this.taskBudget(this.issueOfBranch(p.headRefName)),
           review: data.reviews[String(p.number)],
         })),
       attention: live.issues
