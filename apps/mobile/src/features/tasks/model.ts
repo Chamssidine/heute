@@ -340,3 +340,73 @@ export const FIXTURE_TASK_ITEMS: readonly TaskItem[] = [
 export const TASKS_FIXTURE_DATE = "2026-09-30";
 
 export const tasksDayFixture: TasksDay = createTasksDay(TASKS_FIXTURE_DATE, FIXTURE_TASK_ITEMS);
+
+/**
+ * Type des transitions autorisées selon PLAN §6 P4-02.
+ * Transitions permises seulement vers l'avant : offen → in_arbeit → erledigt.
+ */
+export type AllowedTaskTransition =
+  { from: "offen"; to: "in_arbeit" } | { from: "in_arbeit"; to: "erledigt" };
+
+/**
+ * Matrice stricte des transitions permises vers l'avant selon PLAN §6 P4-02 :
+ * - offen peut uniquement passer à in_arbeit
+ * - in_arbeit peut uniquement passer à erledigt
+ * - erledigt est un état final (aucune transition vers l'arrière ou vers l'avant)
+ */
+export const ALLOWED_TASK_TRANSITIONS: Readonly<Record<TaskStatus, readonly TaskStatus[]>> = {
+  offen: ["in_arbeit"],
+  in_arbeit: ["erledigt"],
+  erledigt: [],
+};
+
+/**
+ * Valide si une transition de statut est autorisée (uniquement vers l'avant : offen → in_arbeit → erledigt).
+ */
+export function isAllowedTaskTransition(from: TaskStatus, to: TaskStatus): boolean {
+  const allowed = ALLOWED_TASK_TRANSITIONS[from];
+  return allowed !== undefined && allowed.includes(to);
+}
+
+/**
+ * Calcule le statut suivant valide vers l'avant, ou null si la tâche est déjà terminée.
+ */
+export function getNextTaskStatus(current: TaskStatus): TaskStatus | null {
+  if (current === "offen") return "in_arbeit";
+  if (current === "in_arbeit") return "erledigt";
+  return null;
+}
+
+/**
+ * Paramètres pour changer le statut d'une tâche (contrat L -> U).
+ */
+export interface SetTaskStatusVariables {
+  taskId: string;
+  nextStatus: TaskStatus;
+  date?: string;
+  currentStatus?: TaskStatus;
+}
+
+/**
+ * Options pour le hook useSetTaskStatus().
+ */
+export interface UseSetTaskStatusOptions {
+  client?: import("./api.ts").TasksSupabaseClient;
+  queryClient?: import("@tanstack/react-query").QueryClient;
+  defaultDate?: string;
+  onSuccess?: () => void;
+  onError?: (error: Error) => void;
+}
+
+/**
+ * Contrat retourné par le hook useSetTaskStatus() (lu par U).
+ * Expose la méthode de mutation et l'état réactif (isPending, error).
+ */
+export interface UseSetTaskStatusResult {
+  mutate: (variables: SetTaskStatusVariables) => void;
+  mutateAsync: (variables: SetTaskStatusVariables) => Promise<void>;
+  setTaskStatus: (taskId: string, nextStatus: TaskStatus, date?: string) => Promise<void>;
+  isPending: boolean;
+  error: Error | null;
+  reset: () => void;
+}
