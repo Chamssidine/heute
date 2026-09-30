@@ -170,13 +170,23 @@ export function isManualRunDone(
   return run.kind === "task" || pr.headRefOid !== run.startSha;
 }
 
-const QUOTA_ERROR = /RESOURCE_EXHAUSTED|quota (?:reached|exceeded)|usage limit reached/i;
+const QUOTA_ERROR =
+  /RESOURCE_EXHAUSTED|quota (?:reached|exceeded)|usage limit reached|hit your (?:session|usage|weekly) limit/i;
 const DEFAULT_QUOTA_WAIT_MS = 60 * 60_000;
 
 // End of a run's log → how long until the provider's quota resets, or undefined when the
 // run did not stop on a quota. Reads « Resets in 2h18m58s » when the provider gives it.
 export function quotaResetDelayMs(logTail: string): number | undefined {
   if (!QUOTA_ERROR.test(logTail)) return undefined;
+  // Claude: « You've hit your session limit · resets 4pm (Asia/Baghdad) » (machine local time).
+  const clock = logTail.match(/resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+  if (clock?.[1] && clock[3]) {
+    const hour = (Number(clock[1]) % 12) + (clock[3].toLowerCase() === "pm" ? 12 : 0);
+    const at = new Date();
+    at.setHours(hour, Number(clock[2] ?? 0), 0, 0);
+    if (at.getTime() <= Date.now()) at.setDate(at.getDate() + 1);
+    return at.getTime() - Date.now();
+  }
   const reset = logTail.match(/Resets? in\s*(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?/i);
   const [hours, minutes, seconds] = [reset?.[1], reset?.[2], reset?.[3]].map((v) => Number(v ?? 0));
   const delay = ((hours ?? 0) * 3600 + (minutes ?? 0) * 60 + (seconds ?? 0)) * 1000;

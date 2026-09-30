@@ -143,3 +143,9 @@ test("autopilot: a PR without status label waits for its review", () => {
   assert.equal(needsReview(["changements"]), false);
   assert.equal(needsReview(["en-revue"]), false);
 });
+
+test("quota: Claude's session limit message is recognised, with its reset hour", () => {
+  const delay = quotaResetDelayMs("You've hit your session limit · resets 4pm (Asia/Baghdad)");
+  assert.ok(delay !== undefined && delay > 0 && delay <= 24 * 3600_000);
+  assert.equal(quotaResetDelayMs("tout va bien"), undefined);
+});
