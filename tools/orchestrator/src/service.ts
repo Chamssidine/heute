@@ -388,7 +388,10 @@ export class Orchestrator {
         if (review) review.fixRounds += 1;
         await this.github.setLabels(pr.number, [], [STATUS_LABELS.running]);
       }
-      this.store.log("info", `Agent ${run.agent} terminé : PR #${pr.number}`);
+      const metricsStr = run.m
+        ? ` · ${run.m.turns ?? "?"} tours, ${(run.m.inputTokens ?? 0) + (run.m.cacheReadInputTokens ?? 0)} tokens, $${run.m.totalCostUsd.toFixed(2)}`
+        : "";
+      this.store.log("info", `Agent ${run.agent} terminé : PR #${pr.number}${metricsStr}`);
       await this.refresh();
       // Read-only review starts on its own: it only validates and comments.
       await this.review(pr.number, this.config.defaultReviewer);
