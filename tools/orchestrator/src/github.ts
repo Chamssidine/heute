@@ -180,6 +180,10 @@ export class GitHub implements Forge {
     return (JSON.parse(out) as { number: number }[])[0]?.number;
   }
 
+  async ensureLabel(name: string): Promise<void> {
+    await this.run(["label", "create", name, "--color", "1D76DB", "--force"]);
+  }
+
   async ensureStatusLabels(): Promise<void> {
     const colors: Record<string, string> = {
       [STATUS_LABELS.running]: "FBBF24",

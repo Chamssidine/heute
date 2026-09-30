@@ -1,6 +1,6 @@
 // Every action that launches an agent or merges code is triggered by the human from the
 // dashboard. The service only prepares, runs what was asked, and reviews read-only.
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { adapterFor } from "./adapters/index.ts";
 import {
@@ -53,6 +53,7 @@ import {
   STATUS_LABELS,
   type ErrorCode,
 } from "./decisions.ts";
+import { buildAgent, type AgentSpec } from "./agents.ts";
 import type { Forge } from "./forge.ts";
 import type { PullRequest } from "./github.ts";
 import { LocalForge } from "./localForge.ts";
@@ -651,6 +652,71 @@ export class Orchestrator {
     this.store.log("info", `${added} tâche(s) importée(s) depuis GitHub`);
     await this.refresh();
     return added;
+  }
+
+  // ---- Agents created from the dashboard ---------------------------------------------------
+
+  async createAgent(spec: AgentSpec, assign: number[] = []): Promise<string> {
+    const built = buildAgent(spec, {
+      existing: this.config.agents,
+      clis: this.config.clis,
+      repoDir: this.repoDir,
+      briefExists: (path) => existsSync(join(this.repoDir, path)),
+    });
+    if ("errors" in built) throw new Error(built.errors.join(" · "));
+    this.config.agents[built.id] = built.agent;
+    (this.store.data.customAgents ??= {})[built.id] = built.agent;
+    await this.github.ensureLabel?.(built.agent.label);
+    this.store.log("info", `Agent ${built.id} créé (${built.agent.name}, ${built.agent.model})`);
+    this.store.save();
+    if (assign.length > 0) await this.assignTasks(assign, built.id);
+    else await this.refresh();
+    return built.id;
+  }
+
+  // Gives tasks to an agent: it becomes their only agent (the other agent labels are removed).
+  async assignTasks(numbers: number[], agentId: string): Promise<void> {
+    const agent = this.requireAgent(agentId);
+    const agentLabels = Object.values(this.config.agents).map((a) => a.label);
+    for (const n of numbers) {
+      const issue = this.store.live.issues.find((i) => i.number === n);
+      if (!issue || issue.state !== "OPEN") throw new Error(`Tâche #${n} introuvable ou terminée`);
+      if (issue.labels.includes(STATUS_LABELS.running))
+        throw new Error(`Tâche #${n} en cours : attends la fin du run`);
+      const old = issue.labels.filter((l) => agentLabels.includes(l) && l !== agent.label);
+      await this.github.setLabels(n, [agent.label], old);
+    }
+    this.store.log("info", `${numbers.length} tâche(s) assignée(s) à l'agent ${agentId}`);
+    await this.refresh();
+  }
+
+  async deleteAgent(id: string): Promise<void> {
+    const agent = this.requireAgent(id);
+    if (!agent.created)
+      throw new Error(
+        "Seuls les agents créés depuis le dashboard se suppriment (les autres : config.json)",
+      );
+    if (this.running.has(id) || this.launching.has(id))
+      throw new Error(`L'agent ${id} travaille : arrête-le d'abord`);
+    const { [id]: _removed, ...remaining } = this.config.agents;
+    void _removed;
+    this.config.agents = remaining;
+    const { [id]: _custom, ...custom } = this.store.data.customAgents ?? {};
+    void _custom;
+    this.store.data.customAgents = custom;
+    this.store.log("warn", `Agent ${id} supprimé : ses tâches restent à réassigner`);
+    this.store.save();
+    await this.refresh();
+  }
+
+  private listBriefs(): string[] {
+    try {
+      return readdirSync(join(this.repoDir, "docs", "agents"))
+        .filter((f) => f.endsWith(".md"))
+        .map((f) => `docs/agents/${f}`);
+    } catch {
+      return [];
+    }
   }
 
   setAutopilot(enabled: boolean): void {
@@ -1329,6 +1395,10 @@ export class Orchestrator {
         tool: adapter.mode === "manual" ? settings?.command : (TOOL_NAMES[adapter.id] ?? a.cli),
         manual: adapter.mode === "manual",
         model: a.model,
+        label: a.label,
+        brief: a.brief,
+        allowedPaths: a.allowedPaths,
+        created: a.created === true,
         verified: adapter.verified,
         quotaUntil: activeQuota(this.store.data.quotaUntil?.[id]),
         run: current?.run,
@@ -1370,6 +1440,8 @@ export class Orchestrator {
       reviewLines: live.liveLines["review"] ?? [],
       agents,
       status: this.statusView(),
+      briefs: this.listBriefs(),
+      clis: Object.entries(this.config.clis).map(([id, c]) => ({ id, adapter: c.adapter })),
       autopilot: {
         enabled: data.autopilot?.enabled ?? true,
         pausedReason: data.autopilot?.pausedReason,

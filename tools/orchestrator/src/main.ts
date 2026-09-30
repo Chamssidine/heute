@@ -14,6 +14,8 @@ process.env["PATH"] = `${dirname(config.gh)}${delimiter}${process.env["PATH"] ??
 // STATE_DIR lets a test instance run on its own state, next to the usual one.
 const stateDir = process.env["STATE_DIR"] ?? fileURLToPath(new URL("../.state", import.meta.url));
 const store = new Store(stateDir);
+// Agents created from the dashboard live in the state and join the ones of config.json.
+Object.assign(config.agents, store.data.customAgents ?? {});
 const github = new GitHub(config.gh, config.repo);
 const repoDir = fileURLToPath(new URL("../../..", import.meta.url));
 // Local mode: tasks and PRs live in .state/local.json and in git branches of this repository.

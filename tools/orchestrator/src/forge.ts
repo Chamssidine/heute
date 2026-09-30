@@ -32,6 +32,8 @@ export interface Forge {
   createPullRequest(base: string, head: string, title: string, body: string): Promise<void>;
   mergedBranches(): Promise<string[]>;
   ensureStatusLabels(): Promise<void>;
+  // A label an agent needs (GitHub only: local labels are just strings).
+  ensureLabel?(name: string): Promise<void>;
   // Would merging this PR into its base conflict right now? (local forge only)
   wouldConflict?(pr: number): Promise<boolean>;
 }

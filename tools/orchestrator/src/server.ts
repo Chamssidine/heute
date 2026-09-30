@@ -1,3 +1,4 @@
+import type { AgentSpec } from "./agents.ts";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
 import type { Orchestrator } from "./service.ts";
@@ -96,6 +97,21 @@ export function startServer(port: number, orchestrator: Orchestrator, store: Sto
           case "import":
             json(res, 200, { ok: true, added: await orchestrator.importTasks() });
             return;
+          case "createAgent":
+            json(res, 200, {
+              ok: true,
+              id: await orchestrator.createAgent(
+                body["spec"] as AgentSpec,
+                (body["assign"] as number[]) ?? [],
+              ),
+            });
+            return;
+          case "deleteAgent":
+            await orchestrator.deleteAgent(text("id"));
+            break;
+          case "assign":
+            await orchestrator.assignTasks((body["numbers"] as number[]) ?? [], text("agent"));
+            break;
           case "autopilot":
             orchestrator.setAutopilot(body["enabled"] === true);
             break;
