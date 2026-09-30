@@ -137,3 +137,19 @@ test("review merges the base into the head before validating: behind is fine, co
   assert.equal(await mergeBaseInto(repo, "dev"), "conflict");
   assert.equal(git(repo, "status", "--porcelain"), "", "the failed merge is undone");
 });
+
+test("local forge: a queued PR is known to conflict as soon as another one is merged", async () => {
+  const { forge, repo } = fixture();
+  await forge.ensureBase();
+  branchWith(repo, "a/i1", "a.txt", "version A\n");
+  branchWith(repo, "a/i2", "a.txt", "version B\n");
+  branchWith(repo, "a/i3", "c.txt", "sans rapport\n");
+  await forge.createPullRequest("dev", "a/i1", "un", "");
+  await forge.createPullRequest("dev", "a/i2", "deux", "");
+  await forge.createPullRequest("dev", "a/i3", "trois", "");
+  const [one, two, three] = await forge.openPullRequests();
+  assert.equal(await forge.wouldConflict(two?.number ?? 0), false, "no conflict before the merge");
+  await forge.mergeIntoBase(one?.number ?? 0);
+  assert.equal(await forge.wouldConflict(two?.number ?? 0), true);
+  assert.equal(await forge.wouldConflict(three?.number ?? 0), false);
+});

@@ -551,11 +551,62 @@ export class Orchestrator {
     if (this.isReleasePr(pr)) {
       await this.github.mergeRelease(prNumber);
     } else {
-      await this.github.mergeIntoBase(prNumber);
+      try {
+        await this.github.mergeIntoBase(prNumber);
+      } catch (error) {
+        // A conflict is not an error of the orchestrator: the PR goes back to its agent.
+        if (/conflict/i.test((error as Error).message)) {
+          await this.markConflict(pr);
+          await this.refresh();
+          throw new Error(
+            `Conflit avec ${baseBranch(this.config)} : la PR #${prNumber} est renvoyée à son agent`,
+            { cause: error },
+          );
+        }
+        throw error;
+      }
       await this.afterMerge(pr, this.issueOfBranch(pr.headRefName));
+      // Another PR of the queue may now conflict with what was just merged: know it right away.
+      await this.markConflicts();
     }
     this.store.log("info", `PR #${prNumber} mergée par l'humain (${pr.title})`);
     await this.refresh();
+  }
+
+  private async markConflict(pr: PullRequest): Promise<void> {
+    const base = baseBranch(this.config);
+    const review = this.store.data.reviews[String(pr.number)];
+    const reasons = [`${CONFLICT_REASON} ${base}`];
+    if (review) {
+      review.outcome = "changes";
+      review.reasons = reasons;
+      review.reviewerComments = [];
+      review.validationLog = undefined;
+    } else {
+      this.store.data.reviews[String(pr.number)] = {
+        pr: pr.number,
+        issue: this.issueOfBranch(pr.headRefName),
+        outcome: "changes",
+        reviewer: "orchestrateur",
+        reasons,
+        reviewerComments: [],
+        at: new Date().toISOString(),
+        fixRounds: 0,
+      };
+    }
+    await this.github.setLabels(pr.number, [STATUS_LABELS.changes], this.labelsOn(pr));
+    this.store.log("warn", `PR #${pr.number} en conflit avec ${base} : renvoyée à son agent`);
+  }
+
+  // Ready PRs are re-checked whenever the base branch moves: a conflict found now costs nothing,
+  // found at the human's click it costs a round trip.
+  private async markConflicts(): Promise<void> {
+    const check = this.github.wouldConflict;
+    if (!check) return;
+    for (const pr of this.store.live.prs) {
+      if (!pr.labels.includes(STATUS_LABELS.ready)) continue;
+      if (await check.call(this.github, pr.number)) await this.markConflict(pr);
+    }
   }
 
   // Local PRs have no web page: the dashboard's « voir le diff » opens this text.
@@ -602,6 +653,7 @@ export class Orchestrator {
         this.store.save();
         return;
       }
+      await this.markConflicts();
       const agentPrs = this.store.live.prs.filter((p) => agentOfBranch(this.config, p.headRefName));
 
       const reviewPaused = activeQuota(this.store.data.quotaUntil?.["review"]);

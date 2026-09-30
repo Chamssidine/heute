@@ -32,4 +32,6 @@ export interface Forge {
   createPullRequest(base: string, head: string, title: string, body: string): Promise<void>;
   mergedBranches(): Promise<string[]>;
   ensureStatusLabels(): Promise<void>;
+  // Would merging this PR into its base conflict right now? (local forge only)
+  wouldConflict?(pr: number): Promise<boolean>;
 }
