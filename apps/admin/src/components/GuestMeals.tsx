@@ -23,11 +23,20 @@ import {
   type MealFormValues,
   type PageMeal,
 } from "../lib/meals.ts";
+import { constraintErrorMessage, formatAllergies, parseAllergies } from "../lib/bookings.ts";
+import { BookingDialog, type BookingTarget } from "./BookingDialog.tsx";
 import { useRealtimeRefresh } from "../lib/realtime.ts";
 import { getSupabase } from "../lib/supabase.ts";
 import { de } from "../strings/de.ts";
 
-type Booking = { id: string; matchcode: string; label: string };
+type Booking = {
+  id: string;
+  matchcode: string;
+  label: string;
+  arrival: string;
+  departure: string;
+  note: string | null;
+};
 type Count = {
   booking_id: string;
   meal: string;
@@ -46,7 +55,7 @@ async function loadDay(date: string): Promise<Data> {
   const [bookings, counts] = await Promise.all([
     supabase
       .from("bookings")
-      .select("id, matchcode, label")
+      .select("id, matchcode, label, arrival, departure, note")
       .lte("arrival", date)
       .gte("departure", date)
       .order("matchcode"),
@@ -62,16 +71,6 @@ async function loadDay(date: string): Promise<Data> {
     throw counts.error;
   }
   return { bookings: bookings.data, counts: counts.data };
-}
-
-// Les allergies ont déjà été validées par le schéma ; affichage seul, jamais journalisé.
-function allergySummary(value: unknown): string {
-  if (typeof value !== "object" || value === null) {
-    return "";
-  }
-  return Object.entries(value)
-    .map(([name, n]) => `${name} ${String(n)}`)
-    .join(", ");
 }
 
 function toForm(count: Count | undefined): MealFormValues {
@@ -90,6 +89,7 @@ function toForm(count: Count | undefined): MealFormValues {
 export function GuestMeals() {
   const [date, setDate] = useState(() => todayIso());
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [dialog, setDialog] = useState<{ target: BookingTarget } | null>(null);
 
   const reload = useCallback(async (day: string, isCancelled: () => boolean) => {
     try {
@@ -130,7 +130,24 @@ export function GuestMeals() {
             }
           }}
         />
+        <Button onClick={() => setDialog({ target: null })}>{de.bookings.newGroup}</Button>
       </Group>
+      {dialog && (
+        <BookingDialog
+          target={dialog.target}
+          defaultDate={date}
+          onClose={() => setDialog(null)}
+          onSaved={(arrival) => {
+            setDialog(null);
+            // Affiche le groupe créé même s'il arrive un autre jour.
+            if (!dialog.target && arrival !== date) {
+              setDate(arrival);
+            } else {
+              void reload(date, () => false);
+            }
+          }}
+        />
+      )}
       {state.status === "loading" && (
         <Group>
           <Loader size="sm" />
@@ -146,13 +163,41 @@ export function GuestMeals() {
         (state.data.bookings.length === 0 ? (
           <Text>{de.guests.empty}</Text>
         ) : (
-          <Day date={date} data={state.data} onSaved={() => reload(date, () => false)} />
+          <Day
+            date={date}
+            data={state.data}
+            onSaved={() => reload(date, () => false)}
+            onEdit={(b) =>
+              setDialog({
+                target: {
+                  id: b.id,
+                  values: {
+                    matchcode: b.matchcode,
+                    label: b.label,
+                    arrival: b.arrival,
+                    departure: b.departure,
+                    note: b.note ?? "",
+                  },
+                },
+              })
+            }
+          />
         ))}
     </Stack>
   );
 }
 
-function Day({ date, data, onSaved }: { date: string; data: Data; onSaved: () => Promise<void> }) {
+function Day({
+  date,
+  data,
+  onSaved,
+  onEdit,
+}: {
+  date: string;
+  data: Data;
+  onSaved: () => Promise<void>;
+  onEdit: (booking: Booking) => void;
+}) {
   const totals = useMemo(() => mealTotals(data.counts), [data.counts]);
   return (
     <Stack>
@@ -183,9 +228,14 @@ function Day({ date, data, onSaved }: { date: string; data: Data; onSaved: () =>
       </Card>
       {data.bookings.map((b) => (
         <Card key={b.id} withBorder>
-          <Title order={4}>
-            {b.matchcode} · {b.label}
-          </Title>
+          <Group justify="space-between">
+            <Title order={4}>
+              {b.matchcode} · {b.label}
+            </Title>
+            <Button variant="light" size="xs" onClick={() => onEdit(b)}>
+              {de.bookings.edit}
+            </Button>
+          </Group>
           <Stack gap="xs" mt="xs">
             {PAGE_MEALS.map((meal) => (
               <MealRow
@@ -217,7 +267,8 @@ function MealRow(props: {
   const [form, setForm] = useState<MealFormValues>(() => toForm(count));
   const [formError, setFormError] = useState<string | null>(null);
   const [save, setSave] = useState<SaveState>("idle");
-  const allergies = allergySummary(count?.allergies);
+  const [allergyText, setAllergyText] = useState(() => formatAllergies(count?.allergies));
+  const [serverError, setServerError] = useState<string | null>(null);
 
   const set = (field: keyof MealFormValues) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((f) => ({ ...f, [field]: e.currentTarget.value }));
@@ -230,17 +281,24 @@ function MealRow(props: {
       setFormError(de.guests.errors[result.error]);
       return;
     }
+    const allergies = parseAllergies(allergyText);
+    if (!allergies.ok) {
+      setFormError(de.guests.errors[allergies.error]);
+      return;
+    }
     setFormError(null);
+    setServerError(null);
     setSave("saving");
-    // allergies volontairement absentes : l'upsert conserve la valeur existante.
     const { error } = await getSupabase()
       .from("meal_counts")
       .upsert(
-        { booking_id: bookingId, date, meal, ...result.value },
+        { booking_id: bookingId, date, meal, ...result.value, allergies: allergies.value },
         { onConflict: "booking_id,date,meal" },
       );
     if (error) {
+      // Code seul : le message peut contenir la ligne fautive, donc des allergies.
       console.error("meal_counts konnte nicht gespeichert werden", error.code);
+      setServerError(constraintErrorMessage(error));
       setSave("error");
       return;
     }
@@ -289,16 +347,21 @@ function MealRow(props: {
           value={form.note}
           onChange={set("note")}
         />
+        <TextInput
+          w={220}
+          label={de.guests.allergies}
+          placeholder="gluten 2, milch 1"
+          value={allergyText}
+          onChange={(e) => {
+            setAllergyText(e.currentTarget.value);
+            setSave("idle");
+          }}
+        />
         <Button onClick={() => void submit()} loading={save === "saving"}>
           {de.guests.save}
         </Button>
         {save === "saved" && <Text size="sm">{de.guests.saved}</Text>}
       </Group>
-      {allergies && (
-        <Text size="xs">
-          {de.guests.allergies}: {allergies}
-        </Text>
-      )}
       {formError && (
         <Text size="sm" c="red" role="alert">
           {formError}
@@ -306,7 +369,7 @@ function MealRow(props: {
       )}
       {save === "error" && (
         <Text size="sm" c="red" role="alert">
-          {de.guests.saveError}
+          {serverError ?? de.guests.saveError}
         </Text>
       )}
     </Stack>
