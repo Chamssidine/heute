@@ -153,3 +153,16 @@ test("local forge: a queued PR is known to conflict as soon as another one is me
   assert.equal(await forge.wouldConflict(two?.number ?? 0), true);
   assert.equal(await forge.wouldConflict(three?.number ?? 0), false);
 });
+
+test("a correction is judged on the commits added since its start commit, never on its own branch", async () => {
+  const { repo } = fixture();
+  const { commitsAhead, headSha } = await import("./worktree.ts");
+  git(repo, "switch", "-q", "-c", "a/i9", "dev");
+  const start = await headSha(repo);
+  assert.equal(await commitsAhead(repo, start), 0, "nothing done yet");
+  writeFileSync(join(repo, "fix.txt"), "correction\n");
+  git(repo, "add", ".");
+  git(repo, "commit", "-q", "-m", "correction");
+  assert.equal(await commitsAhead(repo, start), 1);
+  assert.equal(await commitsAhead(repo, "a/i9"), 0, "comparing a branch with itself always says 0");
+});

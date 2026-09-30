@@ -396,7 +396,7 @@ export class Orchestrator {
         baseRef: this.baseRef(),
         errors,
       }),
-      pr.headRefOid,
+      await headSha(agent.worktree),
     );
   }
 
@@ -1111,6 +1111,7 @@ export class Orchestrator {
       logFile: join(this.store.logsDir, `${id}.log`),
       localRound,
     };
+    run.startSha = startSha;
     this.store.live.liveLines[agentId] = [];
     this.steps.set(agentId, 0);
     this.work.delete(agentId);
@@ -1295,7 +1296,7 @@ export class Orchestrator {
             errors: problems,
             round,
           }),
-          undefined,
+          run.startSha,
           round,
         );
         return;
