@@ -815,6 +815,60 @@
         color: var(--bad-text);
         font-weight: 600;
       }
+
+      .statusbar {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px 16px;
+        display: grid;
+        gap: 6px;
+      }
+      .status-line {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+        min-width: 0;
+      }
+      .status-line .txt {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .status-line .since {
+        margin-left: auto;
+        color: var(--text-3);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .sdot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        flex: none;
+        background: var(--text-3);
+      }
+      .sdot.busy {
+        background: var(--warn-border);
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+      .sdot.agent {
+        background: var(--accent);
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+      .sdot.idle {
+        background: var(--ok-text);
+      }
+      .sdot.paused {
+        background: var(--bad-text);
+      }
+      .status-foot {
+        font-size: 12px;
+        color: var(--text-3);
+      }
     </style>
   </head>
   <body>
@@ -831,6 +885,11 @@
           <button id="journal">Journal <span class="badge" id="errors" hidden></span></button>
         </div>
       </header>
+
+      <section aria-labelledby="h-status">
+        <h2 id="h-status">Statut de l'orchestrateur</h2>
+        <div class="statusbar" id="statusbar" aria-live="polite"></div>
+      </section>
 
       <section aria-labelledby="h-progress">
         <h2 id="h-progress">Progression</h2>
@@ -1519,6 +1578,61 @@
         return { label: "libre", tone: "ok" };
       }
 
+      // What the orchestrator is doing now, refreshed every second for the elapsed times.
+      function elapsed(iso) {
+        const sec = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
+        return sec < 60
+          ? `${sec} s`
+          : `${Math.floor(sec / 60)} min ${String(sec % 60).padStart(2, "0")} s`;
+      }
+
+      function renderStatus() {
+        const st = state?.status;
+        if (!st) return;
+        const line = (cls, text, since) =>
+          h(
+            "div",
+            { class: "status-line" },
+            h("span", { class: `sdot ${cls}` }),
+            h("span", { class: "txt" }, text),
+            since ? h("span", { class: "since" }, `depuis ${elapsed(since)}`) : null,
+          );
+        const rows = [
+          ...st.items.map((i) => line("busy", i.text, i.since)),
+          ...st.agents.map((a) =>
+            line(
+              "agent",
+              `Agent ${a.id} ${a.kind === "fix" ? "corrige" : "travaille sur"} #${a.issue}`,
+              a.since,
+            ),
+          ),
+        ];
+        if (rows.length === 0 && st.idle) {
+          rows.push(
+            line(
+              state.autopilot?.pausedReason || !state.autopilot?.enabled ? "paused" : "idle",
+              st.idle,
+            ),
+          );
+        }
+        const next = st.nextTickAt
+          ? Math.max(0, Math.round((Date.parse(st.nextTickAt) - Date.now()) / 1000))
+          : undefined;
+        rows.push(
+          h(
+            "div",
+            { class: "status-foot" },
+            next !== undefined
+              ? `Prochain contrôle dans ${next} s (toutes les ${st.tickSeconds} s)`
+              : "",
+            state.mode === "local"
+              ? " · mode local (GitHub seulement pour publier)"
+              : " · mode GitHub",
+          ),
+        );
+        $("statusbar").replaceChildren(...rows);
+      }
+
       // Progress numbers, computed from the agent issues only (the ones in the plan).
       function overviewData() {
         const withPr = new Set(state.prs.map((p) => p.issue).filter(Boolean));
@@ -2013,6 +2127,7 @@
         if (!state) return;
         const tick = Math.floor(Date.now() / 10000);
         renderHeader();
+        renderStatus();
         if (
           force ||
           changed("inbox", [
@@ -2065,6 +2180,7 @@
       $("refresh").append(icon("refresh"));
       $("refresh").addEventListener("click", () => act("refresh", {}, "Actualisé"));
       $("journal").addEventListener("click", () => state && showJournal());
+      setInterval(renderStatus, 1000);
       $("autopilot").addEventListener("click", () => {
         if (!state?.autopilot) return;
         lastClicked = $("autopilot");
