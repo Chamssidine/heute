@@ -104,6 +104,15 @@ export async function reviewPullRequest(req: ReviewRequest): Promise<ReviewResul
       ? { ok: true, log: req.validated.log }
       : await runValidations(config.reviewWorktree);
   if (!validations.ok) {
+    // Is it the PR, or is the base branch itself already failing? If the base fails the same
+    // checks, no agent can fix it: stop and say so instead of blaming (and re-running) the agent.
+    await prepareWorktree(config.reviewWorktree, { detach: req.baseRef }, { fetch: false });
+    const onBase = await runValidations(config.reviewWorktree);
+    if (!onBase.ok) throw new Error(`BASE_BROKEN:${onBase.log.slice(-600)}`);
+    await prepareWorktree(config.reviewWorktree, { detach: req.headRef }, { fetch: false });
+    await mergeBaseInto(config.reviewWorktree, req.baseRef);
+  }
+  if (!validations.ok) {
     const decision = decideReview({ ...base, validationsPassed: false, reviewerApproved: true });
     return { ...decision, reviewerComments: [], validationLog: validations.log };
   }
