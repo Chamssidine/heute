@@ -63,3 +63,8 @@ test("today strings match docs/design/screens.md §6.1", () => {
   assert.equal(strings.today.abend, "Abend");
   assert.equal(strings.today.frueh, "Früh");
 });
+
+test("team strings match docs/design/screens.md §6.4", () => {
+  assert.equal(strings.team.title, "Team");
+  assert.equal(strings.team.headerTitle("Di, 30.09."), "Team · Di, 30.09.");
+});

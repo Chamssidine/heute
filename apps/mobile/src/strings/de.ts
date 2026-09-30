@@ -87,6 +87,10 @@ export const strings = {
     profil: "Profil",
     comingSoon: "Bald verfügbar",
   },
+  team: {
+    title: "Team",
+    headerTitle: (dateFormatted: string) => `Team · ${dateFormatted}`,
+  },
   today: {
     myShift: "Mein Dienst",
     myTasks: "Meine Aufgaben",
