@@ -2,7 +2,7 @@
 // dashboard. The service only prepares, runs what was asked, and reviews read-only.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { adapterFor } from "./adapters/index.ts";
+import { adapterFor, type CliAdapter } from "./adapters/index.ts";
 import { agentOfBranch, type Config } from "./config.ts";
 import {
   isManualRunDone,
@@ -350,13 +350,21 @@ export class Orchestrator {
       "info",
       `Agent ${agentId} lancé (${kind}) sur #${pr ?? issue}, branche ${branch}`,
     );
-    void handle.done.then(({ code }) => this.finish(run, code));
+    void handle.done.then(({ code, stdout }) => this.finish(run, code, stdout, adapter));
   }
 
-  private async finish(run: RunRecord, code: number): Promise<void> {
+  private async finish(
+    run: RunRecord,
+    code: number,
+    stdout?: string,
+    adapter?: CliAdapter,
+  ): Promise<void> {
     this.running.delete(run.agent);
     run.endedAt = new Date().toISOString();
     run.exitCode = code;
+    if (stdout && adapter) {
+      run.m = adapter.usage(stdout);
+    }
     try {
       const quotaDelay = quotaResetDelayMs(logTail(run.logFile));
       if (quotaDelay !== undefined) {
