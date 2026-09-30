@@ -2,8 +2,40 @@
 // dashboard. The service only prepares, runs what was asked, and reviews read-only.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { adapterFor } from "./adapters/index.ts";
+import { adapterFor, type CliAdapter } from "./adapters/index.ts";
 import { agentOfBranch, type Config } from "./config.ts";
+
+const GENERATED_FILE_PATTERNS = [
+  "package-lock.json",
+  "packages/domain/src/database.types.ts",
+  "pnpm-lock.yaml",
+];
+
+function filterDiff(rawDiff: string): string {
+  const lines = rawDiff.split("\n");
+  const result: string[] = [];
+  let inExcludedFile = false;
+
+  for (const line of lines) {
+    if (line.startsWith("diff --git")) {
+      const match = line.match(/a\/(.+?)\s+b\/(.+?)$/);
+      const filepath = match?.[1] ?? match?.[2];
+      inExcludedFile = !!filepath && GENERATED_FILE_PATTERNS.some((p) => filepath.includes(p));
+
+      if (inExcludedFile) {
+        // Add a summary line instead
+        const path = filepath || "file";
+        result.push(`--- ${path}: (fichier généré, exclu du diff)`);
+      } else {
+        result.push(line);
+      }
+    } else if (!inExcludedFile) {
+      result.push(line);
+    }
+  }
+
+  return result.join("\n");
+}
 import {
   isManualRunDone,
   nextIssue,
@@ -208,6 +240,7 @@ export class Orchestrator {
       await ensureWorktree(this.repoDir, this.config.reviewWorktree);
       await this.github.setLabels(prNumber, [STATUS_LABELS.review], this.labelsOn(pr));
       const issue = this.issueOfBranch(pr.headRefName);
+      const rawDiff = await this.github.pullRequestDiff(prNumber);
       const result = await reviewPullRequest({
         config: this.config,
         agentId,
@@ -215,7 +248,7 @@ export class Orchestrator {
         pr,
         files: await this.github.pullRequestFiles(prNumber),
         issue,
-        diff: await this.github.pullRequestDiff(prNumber),
+        diff: filterDiff(rawDiff),
         issueText: issue === undefined ? undefined : await this.github.issueText(issue),
         fixRoundsDone: fixRounds,
         logsDir: this.store.logsDir,
@@ -343,6 +376,8 @@ export class Orchestrator {
       logFile: run.logFile,
       timeoutMs: this.config.runTimeoutMinutes * 60_000,
       onLine: (line) => this.store.pushLine(agentId, line),
+      effort: agent.effort ?? "medium",
+      budgetUsd: agent.budgetUsd ?? 1.5,
     });
     this.running.set(agentId, { run, handle });
     this.store.data.runs.push(run);
@@ -350,13 +385,21 @@ export class Orchestrator {
       "info",
       `Agent ${agentId} lancé (${kind}) sur #${pr ?? issue}, branche ${branch}`,
     );
-    void handle.done.then(({ code }) => this.finish(run, code));
+    void handle.done.then(({ code, stdout }) => this.finish(run, code, stdout, adapter));
   }
 
-  private async finish(run: RunRecord, code: number): Promise<void> {
+  private async finish(
+    run: RunRecord,
+    code: number,
+    stdout?: string,
+    adapter?: CliAdapter,
+  ): Promise<void> {
     this.running.delete(run.agent);
     run.endedAt = new Date().toISOString();
     run.exitCode = code;
+    if (stdout && adapter) {
+      run.m = adapter.usage(stdout);
+    }
     try {
       const quotaDelay = quotaResetDelayMs(logTail(run.logFile));
       if (quotaDelay !== undefined) {
@@ -380,7 +423,10 @@ export class Orchestrator {
         if (review) review.fixRounds += 1;
         await this.github.setLabels(pr.number, [], [STATUS_LABELS.running]);
       }
-      this.store.log("info", `Agent ${run.agent} terminé : PR #${pr.number}`);
+      const metricsStr = run.m
+        ? ` · ${run.m.turns ?? "?"} tours, ${(run.m.inputTokens ?? 0) + (run.m.cacheReadInputTokens ?? 0)} tokens, $${run.m.totalCostUsd.toFixed(2)}`
+        : "";
+      this.store.log("info", `Agent ${run.agent} terminé : PR #${pr.number}${metricsStr}`);
       await this.refresh();
       // Read-only review starts on its own: it only validates and comments.
       await this.review(pr.number, this.config.defaultReviewer);

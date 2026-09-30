@@ -112,6 +112,8 @@ export async function reviewPullRequest(req: ReviewRequest): Promise<ReviewResul
     logFile: join(req.logsDir, `review-pr${req.pr.number}-${Date.now()}.log`),
     timeoutMs: config.runTimeoutMinutes * 60_000,
     onLine: req.onLine,
+    effort: reviewer.effort ?? "medium",
+    budgetUsd: reviewer.budgetUsd ?? 0.5,
   });
   const { code, stdout } = await run.done;
   const verdict = code === 0 ? parseVerdict(adapter.finalText(stdout)) : undefined;

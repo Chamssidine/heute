@@ -17,6 +17,16 @@ export interface LaunchSpec {
   stdinPrompt: string;
 }
 
+export interface UsageMetrics {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  totalCostUsd: number;
+  turns?: number;
+  durationMs?: number;
+}
+
 export interface CliAdapter {
   readonly id: string;
   // True once the adapter has been tried against the real CLI on this machine.
@@ -30,6 +40,8 @@ export interface CliAdapter {
   summarize(line: string): string | undefined;
   // Whole stdout of a finished run → the final text answer.
   finalText(stdout: string): string | undefined;
+  // Whole stdout of a finished run → usage metrics.
+  usage(stdout: string): UsageMetrics | undefined;
   // For CLIs that end the whole run at the first refused command (agy in print mode):
   // how to find the refusals and continue the same conversation afterwards.
   readonly resume?: {

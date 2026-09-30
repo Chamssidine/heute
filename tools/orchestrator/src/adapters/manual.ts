@@ -12,4 +12,5 @@ export const manual: CliAdapter = {
   },
   summarize: () => undefined,
   finalText: () => undefined,
+  usage: () => undefined,
 };

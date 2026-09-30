@@ -1,4 +1,4 @@
-import { brief, parseJson, withExtra, type CliAdapter } from "./types.ts";
+import { brief, parseJson, withExtra, type CliAdapter, type UsageMetrics } from "./types.ts";
 
 // Agents may edit files and run the project's own tools; merging stays with the human.
 const AGENT_TOOLS = [
@@ -91,5 +91,21 @@ export const claude: CliAdapter = {
     const lines = stdout.split(/\r?\n/).map(parseJson);
     const result = lines.reverse().find((e) => e?.["type"] === "result");
     return typeof result?.["result"] === "string" ? result["result"] : undefined;
+  },
+  usage(stdout) {
+    const lines = stdout.split(/\r?\n/).map(parseJson);
+    const result = lines.reverse().find((e) => e?.["type"] === "result");
+    if (!result) return undefined;
+    const usage = result["usage"] as Record<string, unknown> | undefined;
+    if (!usage) return undefined;
+    const turns = (result["iterations"] as unknown[])?.length ?? undefined;
+    return {
+      inputTokens: Number(usage["input_tokens"] ?? 0),
+      outputTokens: Number(usage["output_tokens"] ?? 0),
+      cacheReadInputTokens: Number(usage["cache_read_input_tokens"] ?? 0),
+      cacheCreationInputTokens: Number(usage["cache_creation_input_tokens"] ?? 0),
+      totalCostUsd: Number(result["total_cost_usd"] ?? 0),
+      turns,
+    };
   },
 };

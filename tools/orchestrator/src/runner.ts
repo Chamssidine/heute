@@ -70,9 +70,23 @@ export interface RunRequest {
   logFile: string;
   timeoutMs: number;
   onLine: (line: string) => void;
+  effort?: "low" | "medium" | "high" | "max";
+  budgetUsd?: number;
 }
 
 const MAX_RESUMES = 3;
+
+function injectBudgetFlags(spec: LaunchSpec, effort?: string, budgetUsd?: number): LaunchSpec {
+  if (!effort && !budgetUsd) return spec;
+  const args = [...spec.args];
+  if (effort) {
+    args.push("--effort", effort);
+  }
+  if (budgetUsd) {
+    args.push("--max-budget-usd", String(budgetUsd));
+  }
+  return { ...spec, args };
+}
 
 function resumeMessage(refused: string[]): string {
   return `Ces commandes ont été refusées, car elles ne sont pas autorisées dans ce projet :
@@ -91,7 +105,13 @@ export function startResumableRun(req: RunRequest): RunHandle {
   const run = (spec: LaunchSpec) =>
     startRun(req.adapter, spec, req.cwd, req.logFile, remaining(), req.onLine);
 
-  let current = run(req.adapter.launch(req.settings, req.model, req.role, req.prompt));
+  let current = run(
+    injectBudgetFlags(
+      req.adapter.launch(req.settings, req.model, req.role, req.prompt),
+      req.effort,
+      req.budgetUsd,
+    ),
+  );
   let stopped = false;
   const done = (async () => {
     let result = await current.done;
@@ -103,7 +123,11 @@ export function startResumableRun(req: RunRequest): RunHandle {
       if (refused.length === 0 || !conversation || Date.now() >= deadline) break;
       req.onLine(`Commande refusée (${refused.join(", ")}) : reprise ${attempt}/${MAX_RESUMES}`);
       current = run(
-        resume.launch(req.settings, req.model, req.role, conversation, resumeMessage(refused)),
+        injectBudgetFlags(
+          resume.launch(req.settings, req.model, req.role, conversation, resumeMessage(refused)),
+          req.effort,
+          req.budgetUsd,
+        ),
       );
       result = await current.done;
       stdout += result.stdout;

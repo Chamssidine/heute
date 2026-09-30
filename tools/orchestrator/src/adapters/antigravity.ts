@@ -94,4 +94,5 @@ export const antigravity: CliAdapter = {
     const response = (result?.["result"] as Record<string, unknown> | undefined)?.["response"];
     return typeof response === "string" ? response : undefined;
   },
+  usage: () => undefined,
 };

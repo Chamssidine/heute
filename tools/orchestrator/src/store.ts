@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { IssueSummary, ReviewOutcome } from "./decisions.ts";
 import type { PullRequest } from "./github.ts";
+import type { UsageMetrics } from "./adapters/types.ts";
 
 export type AgentId = string;
 
@@ -26,6 +27,10 @@ export interface RunRecord {
   prompt?: string;
   worktree?: string;
   startSha?: string;
+  // Usage metrics (tokens, cost) from the LLM run.
+  m?: UsageMetrics;
+  // Cumul USD dépensés sur cette tâche (toutes les runs + réparations).
+  cumulCostUsd?: number;
 }
 
 export interface ReviewRecord {
