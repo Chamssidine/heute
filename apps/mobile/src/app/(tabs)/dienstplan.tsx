@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Screen } from "../../components/ui/Screen";
 import {
   ShiftRow,
@@ -8,14 +8,14 @@ import {
   type ShiftViewMode,
 } from "../../features/shifts/components";
 import { useMyShifts } from "../../features/shifts/hooks";
-import { myShiftsFixture } from "../../features/shifts/model";
 import { theme } from "../../lib/theme";
 import { strings } from "../../strings";
 
+const DEFAULT_MONTH = "2026-10";
+
 export default function DienstplanScreen(): React.ReactElement {
   const [viewMode, setViewMode] = useState<ShiftViewMode>("monat");
-  // Provisoire : mois de la fixture, en attendant le branchement Supabase (voir issue #35).
-  const viewState = useMyShifts(myShiftsFixture.month);
+  const viewState = useMyShifts(DEFAULT_MONTH);
 
   return (
     <Screen
@@ -24,21 +24,25 @@ export default function DienstplanScreen(): React.ReactElement {
       viewState={viewState}
       headerRight={<ViewModeSelector mode={viewMode} onChange={setViewMode} />}
     >
-      {(data) => (
-        <View style={styles.container}>
-          <ShiftsBalanceHeader month={data.month} ist={data.ist} soll={data.soll} />
+      {(data) => {
+        const displayedDays = viewMode === "woche" ? data.days.slice(0, 7) : data.days;
 
-          {viewMode === "woche" ? (
-            <Text style={styles.notice}>{strings.shifts.weekUnavailable}</Text>
-          ) : (
+        return (
+          <View style={styles.container}>
+            <ShiftsBalanceHeader month={data.month} ist={data.ist} soll={data.soll} />
+
             <View style={styles.listContainer}>
-              {data.days.map((day, index) => (
-                <ShiftRow key={day.date} day={day} isLast={index === data.days.length - 1} />
+              {displayedDays.map((day, index) => (
+                <ShiftRow
+                  key={day.date}
+                  day={day}
+                  isLast={index === displayedDays.length - 1}
+                />
               ))}
             </View>
-          )}
-        </View>
-      )}
+          </View>
+        );
+      }}
     </Screen>
   );
 }
@@ -46,10 +50,6 @@ export default function DienstplanScreen(): React.ReactElement {
 const styles = StyleSheet.create({
   container: {
     paddingBottom: theme.space[4],
-  },
-  notice: {
-    ...theme.typography.body,
-    color: theme.colors.textMuted,
   },
   listContainer: {
     backgroundColor: theme.colors.surface,
