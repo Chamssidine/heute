@@ -56,6 +56,19 @@ export function startServer(port: number, orchestrator: Orchestrator, store: Sto
         json(res, 200, orchestrator.view());
         return;
       }
+      // Local PRs have no web page: their diff is served here (opened by « Voir le diff »).
+      const diffRoute = url.pathname.match(/^\/api\/pr\/(\d+)(?:\/files)?$/);
+      if (req.method === "GET" && diffRoute) {
+        try {
+          const diff = await orchestrator.diffOf(Number(diffRoute[1]));
+          res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+          res.end(diff || "(aucune différence)");
+        } catch (error) {
+          res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+          res.end((error as Error).message);
+        }
+        return;
+      }
       if (req.method === "GET" && url.pathname === "/api/events") {
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
         const send = (): void => void res.write(`data: ${JSON.stringify(orchestrator.view())}\n\n`);
@@ -80,6 +93,9 @@ export function startServer(port: number, orchestrator: Orchestrator, store: Sto
           case "launch":
             await orchestrator.launch(text("agent"));
             break;
+          case "import":
+            json(res, 200, { ok: true, added: await orchestrator.importTasks() });
+            return;
           case "autopilot":
             orchestrator.setAutopilot(body["enabled"] === true);
             break;

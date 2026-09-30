@@ -19,16 +19,21 @@ function lockHash(dir: string): string {
 // the lockfile changed. Untracked build output is removed, node_modules is kept.
 export async function prepareWorktree(
   dir: string,
-  ref: { detach: string } | { branch: string },
+  // `detach` takes a full ref (origin/dev, or dev in local mode); `branch` follows the remote
+  // branch; `local` keeps a local branch as it is (local mode has no remote for task branches).
+  ref: { detach: string } | { branch: string } | { local: string },
+  options: { fetch?: boolean } = {},
 ): Promise<void> {
   // Without this check a missing folder surfaces as a misleading « spawn git ENOENT ».
   if (!existsSync(dir)) throw new Error(`Worktree introuvable : ${dir}`);
   const before = lockHash(dir);
-  await git(dir, ["fetch", "--prune", "origin"]);
+  if (options.fetch !== false) await git(dir, ["fetch", "--prune", "origin"]);
   await git(dir, ["reset", "--hard"]);
   await git(dir, ["clean", "-fd"]);
   if ("detach" in ref) {
-    await git(dir, ["checkout", "--detach", `origin/${ref.detach}`]);
+    await git(dir, ["checkout", "--detach", ref.detach]);
+  } else if ("local" in ref) {
+    await git(dir, ["checkout", ref.local]);
   } else {
     await git(dir, ["checkout", "-B", ref.branch, `origin/${ref.branch}`]);
   }
@@ -73,17 +78,19 @@ async function gitOutput(cwd: string, args: string[]): Promise<{ code: number; o
 // markers are left in the files for the agent to resolve (it may run git add / commit / push).
 export async function syncWithBase(
   dir: string,
-  base: string,
+  baseRef: string,
+  // False in local mode: nothing to fetch, nothing to push.
+  remote = true,
 ): Promise<"up-to-date" | "merged" | "conflict"> {
-  await git(dir, ["fetch", "--prune", "origin"]);
-  const merge = await gitOutput(dir, ["merge", `origin/${base}`, "--no-edit"]);
+  if (remote) await git(dir, ["fetch", "--prune", "origin"]);
+  const merge = await gitOutput(dir, ["merge", baseRef, "--no-edit"]);
   if (merge.code === 0) {
     if (/Already up to date/i.test(merge.out)) return "up-to-date";
-    await git(dir, ["push", "origin", "HEAD"]);
+    if (remote) await git(dir, ["push", "origin", "HEAD"]);
     return "merged";
   }
   const unmerged = await gitOutput(dir, ["diff", "--name-only", "--diff-filter=U"]);
-  if (unmerged.out === "") throw new Error(`git merge origin/${base} (${dir}) : ${merge.out}`);
+  if (unmerged.out === "") throw new Error(`git merge ${baseRef} (${dir}) : ${merge.out}`);
   return "conflict";
 }
 
@@ -107,8 +114,8 @@ export async function fastForwardInto(
 }
 
 // Commits on `head` that `base` does not have yet.
-export async function aheadCount(dir: string, base: string, head: string): Promise<number> {
-  const r = await gitOutput(dir, ["rev-list", "--count", `origin/${base}..origin/${head}`]);
+export async function aheadCount(dir: string, baseRef: string, headRef: string): Promise<number> {
+  const r = await gitOutput(dir, ["rev-list", "--count", `${baseRef}..${headRef}`]);
   if (r.code !== 0) throw new Error(`git rev-list (${dir}) : ${r.out}`);
   return Number(r.out);
 }
@@ -134,12 +141,18 @@ export async function commitsAhead(dir: string, ref: string): Promise<number> {
   return Number(r.out);
 }
 
-export async function changedFiles(dir: string, base: string): Promise<string[]> {
-  const r = await gitOutput(dir, ["diff", "--name-only", `origin/${base}...HEAD`]);
+export async function changedFiles(dir: string, baseRef: string): Promise<string[]> {
+  const r = await gitOutput(dir, ["diff", "--name-only", `${baseRef}...HEAD`]);
   if (r.code !== 0) throw new Error(`git diff (${dir}) : ${r.out}`);
   return r.out === "" ? [] : r.out.split(/\r?\n/);
 }
 
 export async function pushBranch(dir: string, branch: string): Promise<void> {
   await git(dir, ["push", "-u", "origin", branch]);
+}
+
+export async function headSha(dir: string): Promise<string> {
+  const r = await gitOutput(dir, ["rev-parse", "HEAD"]);
+  if (r.code !== 0) throw new Error(`git rev-parse (${dir}) : ${r.out}`);
+  return r.out;
 }

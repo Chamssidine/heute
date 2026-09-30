@@ -19,89 +19,137 @@ Pour supprimer ou déplacer un fichier suivi : \`git rm\` ou \`git mv\`. N'utili
 const FINAL = `Termine par UNE ligne JSON, sans rien après :
 {"v":1, "id": <issue>, "s": "ok"|"fail"|"blocked", "e": [codes d'erreur si s != "ok"], "val": {"tc": true|false, "li": true|false, "te": true|false}}`;
 
-export function taskPrompt(
-  id: string,
-  agent: AgentConfig,
-  issue: number,
-  branch: string,
-  resume = false,
-  base = "main",
-  issueText = "",
-): string {
-  const start = resume
-    ? `La branche ${branch} est déjà extraite : elle contient le travail d'un run précédent interrompu.
-Commence par \`git log --oneline origin/${base}..HEAD\` et \`git status\`, puis reprends là où il s'est arrêté,
-sans refaire ce qui est fait.`
-    : `origin/${base} est déjà extrait, arbre propre. Crée ta branche : \`git switch -c ${branch}\`.`;
-  return `Tu es l'agent ${id} (${agent.name}) du projet Heute.
-${AUTONOMY}
+// What the orchestrator says to an agent is one JSON object (machine-read, compact), after the
+// fixed rules: the rules never change, so they stay first and cache well. Free text is only the
+// issue's own spec (a field of the object) and the humans' words in the dashboard.
+const PROTOCOL = `Le message de l'orchestrateur est un objet JSON, à la fin de ce texte. Champs :
+t "task" (nouvelle tâche) | "fix" (corrections demandées) | "check" (tes vérifications ont échoué) ;
+id = numéro de tâche ; dir = ton dossier ; brief = ton brief ; branch = ta branche ; base = branche de base
+et baseRef = son nom complet pour git ; resume = true si ta branche existe déjà ;
+spec = texte de la tâche ; errors = liste {src, msg} à corriger ; round = numéro de tentative.
+Lis d'abord AGENTS.md et ton brief.
+Selon t :
+- task : si resume est faux, ta branche n'existe pas, crée-la (\`git switch -c <branch>\`) sur la base déjà extraite ;
+  sinon elle est déjà extraite, regarde \`git log --oneline <baseRef>..HEAD\` et \`git status\`, reprends là où tu t'es arrêté.
+  Réalise la tâche décrite par spec, uniquement dans tes chemins autorisés, et commite après chaque étape qui compile.
+- fix : ta branche est extraite. Corrige chaque élément de errors, uniquement dans tes chemins autorisés
+  (annule toute modification hors périmètre). Un conflit de fusion avec la base : \`git status\`, édite les
+  fichiers pour retirer les marqueurs de conflit, \`git add\`, \`git commit\`.
+- check : les vérifications de l'orchestrateur échouent sur ton travail. Corrige uniquement errors.
+Dans tous les cas : lance typecheck, lint et tests jusqu'à ce qu'ils passent, commite, et ne pousse pas.
+Si la tâche est impossible ou contradictoire, dis pourquoi en une phrase avant le JSON final, avec "s":"blocked".`;
 
-Dossier de travail : ${agent.worktree}.
-Règles : AGENTS.md et ${agent.brief}. Lis-les d'abord.
-
-Tâche : issue #${issue}. Son texte complet :
-<<<
-${issueText.trim() || "(texte indisponible : lis les critères dans le brief)"}
->>>
-
-Étapes :
-1. ${start}
-2. Réalise l'issue, uniquement dans tes chemins autorisés. Commite après chaque étape qui compile.
-3. Lance les validations demandées (typecheck, lint, tests) et corrige jusqu'à ce qu'elles passent toutes.
-4. Commite le tout. Ne pousse pas et n'ouvre pas de PR : l'orchestrateur revalide, pousse et ouvre la PR.
-5. ${FINAL}
-
-Si l'issue est impossible ou contradictoire : explique pourquoi en une phrase avant le JSON, avec "s":"blocked".`;
+interface AgentMessage {
+  t: "task" | "fix" | "check";
+  id: number;
+  agent: AgentConfig;
+  agentId: string;
+  branch: string;
+  base: string;
+  baseRef: string;
 }
 
-export function fixPrompt(
-  id: string,
-  agent: AgentConfig,
-  issue: number,
-  pr: number,
-  branch: string,
-  feedback: string,
-  base = "main",
-): string {
-  return `Tu es l'agent ${id} (${agent.name}) du projet Heute.
+function envelope(m: AgentMessage, extra: Record<string, unknown>): string {
+  const payload = {
+    v: 1,
+    t: m.t,
+    id: m.id,
+    dir: m.agent.worktree,
+    brief: m.agent.brief,
+    branch: m.branch,
+    base: m.base,
+    baseRef: m.baseRef,
+    ...extra,
+  };
+  return `Tu es l'agent ${m.agentId} (${m.agent.name}) du projet Heute.
 ${AUTONOMY}
+${PROTOCOL}
+${FINAL}
 
-Dossier de travail : ${agent.worktree}. La branche ${branch} de la PR #${pr} est déjà extraite.
-Règles : AGENTS.md et ${agent.brief}. Tâche d'origine : issue #${issue}.
+Message : ${JSON.stringify(payload)}`;
+}
 
-La relecture demande ces corrections :
-${feedback}
+export interface TaskPromptInput {
+  agentId: string;
+  agent: AgentConfig;
+  issue: number;
+  branch: string;
+  base: string;
+  baseRef: string;
+  resume: boolean;
+  spec: string;
+}
 
-Étapes :
-1. Corrige, uniquement dans tes chemins autorisés. Si un fichier hors périmètre a été modifié, annule ce changement.
-   Si un conflit de fusion avec ${base} est signalé, résous-le : \`git status\`, édite les fichiers
-   (supprime les marqueurs de conflit), \`git add\`, \`git commit\`.
-2. Relance les validations (typecheck, lint, tests) jusqu'à ce qu'elles passent.
-3. Commite. Ne pousse pas : l'orchestrateur revalide et pousse.
-4. ${FINAL}`;
+export function taskPrompt(i: TaskPromptInput): string {
+  return envelope(
+    {
+      t: "task",
+      id: i.issue,
+      agent: i.agent,
+      agentId: i.agentId,
+      branch: i.branch,
+      base: i.base,
+      baseRef: i.baseRef,
+    },
+    {
+      resume: i.resume,
+      spec: i.spec.trim() || "(texte indisponible : lis les critères dans le brief)",
+    },
+  );
+}
+
+export interface FixPromptInput {
+  agentId: string;
+  agent: AgentConfig;
+  issue: number;
+  pr: number;
+  branch: string;
+  base: string;
+  baseRef: string;
+  errors: { src: string; msg: string }[];
+}
+
+export function fixPrompt(i: FixPromptInput): string {
+  return envelope(
+    {
+      t: "fix",
+      id: i.issue,
+      agent: i.agent,
+      agentId: i.agentId,
+      branch: i.branch,
+      base: i.base,
+      baseRef: i.baseRef,
+    },
+    { pr: i.pr, resume: true, errors: i.errors },
+  );
 }
 
 // The orchestrator's own checks failed on the agent's commits: same branch, same folder,
-// with the exact output, before anything reaches GitHub.
-export function localFixPrompt(
-  id: string,
-  agent: AgentConfig,
-  issue: number,
-  branch: string,
-  problems: string,
-  round: number,
-): string {
-  return `Tu es l'agent ${id} (${agent.name}) du projet Heute.
-${AUTONOMY}
+// with the exact output, before anything is handed over.
+export interface CheckPromptInput {
+  agentId: string;
+  agent: AgentConfig;
+  issue: number;
+  branch: string;
+  base: string;
+  baseRef: string;
+  errors: { src: string; msg: string }[];
+  round: number;
+}
 
-Dossier de travail : ${agent.worktree}. Ta branche ${branch} est déjà extraite (issue #${issue}).
-Règles : AGENTS.md et ${agent.brief}.
-
-Les vérifications de l'orchestrateur échouent sur ton travail (tentative ${round}) :
-${problems}
-
-Corrige uniquement cela, relance les validations concernées, puis commite. Ne pousse pas.
-${FINAL}`;
+export function localFixPrompt(i: CheckPromptInput): string {
+  return envelope(
+    {
+      t: "check",
+      id: i.issue,
+      agent: i.agent,
+      agentId: i.agentId,
+      branch: i.branch,
+      base: i.base,
+      baseRef: i.baseRef,
+    },
+    { resume: true, errors: i.errors, round: i.round },
+  );
 }
 
 export function reviewPrompt(pr: number, diffFile: string, issueFile: string | undefined): string {

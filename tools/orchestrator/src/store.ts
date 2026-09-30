@@ -70,6 +70,9 @@ export interface PersistedState {
   events: EventRecord[];
   // Per agent: when the LLM provider's quota resets (ISO date). Kept across restarts.
   quotaUntil?: Record<AgentId, string>;
+  // Per branch: the commit the orchestrator already validated (typecheck, lint, tests) and the
+  // log. The review reuses it instead of running everything a second time.
+  validated?: Record<string, { sha: string; log: string }>;
   // Autopilot on/off (the human's switch) and why it stopped itself, if it did.
   autopilot?: { enabled: boolean; pausedReason?: string; resumedAt?: string };
 }

@@ -42,6 +42,10 @@ export interface Config {
   repo: string;
   // Agents branch from and open their PRs against `baseBranch`; only the human merges it
   // into `productionBranch`. With no `baseBranch`, everything goes straight to production.
+  // "github": issues, labels and PRs on GitHub. "local": JSON files and git branches of this
+  // repository; GitHub only receives the base branch (and the one publish PR).
+  mode?: "github" | "local";
+  mergeWorktree?: string;
   baseBranch?: string;
   productionBranch?: string;
   autopilot?: Partial<AutopilotConfig>;

@@ -1,21 +1,14 @@
 import { exec } from "./exec.ts";
 import { STATUS_LABELS, type IssueSummary } from "./decisions.ts";
+import type { Forge, PullRequest } from "./forge.ts";
 
-export interface PullRequest {
-  number: number;
-  title: string;
-  url: string;
-  headRefName: string;
-  headRefOid: string;
-  baseRefName: string;
-  labels: string[];
-}
+export type { PullRequest };
 
 interface RawLabelled {
   labels: { name: string }[];
 }
 
-export class GitHub {
+export class GitHub implements Forge {
   private readonly gh: string;
   private readonly repo: string;
 
@@ -168,6 +161,23 @@ export class GitHub {
       "--body",
       body,
     ]);
+  }
+
+  // The open « publish » PR (base branch to production), if any: used by the local forge too.
+  async findRelease(head: string, base: string): Promise<number | undefined> {
+    const out = await this.run([
+      "pr",
+      "list",
+      "--state",
+      "open",
+      "--head",
+      head,
+      "--base",
+      base,
+      "--json",
+      "number",
+    ]);
+    return (JSON.parse(out) as { number: number }[])[0]?.number;
   }
 
   async ensureStatusLabels(): Promise<void> {
