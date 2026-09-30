@@ -1912,7 +1912,7 @@
         $("repo").href = `https://github.com/${state.repo}`;
         $("dot").className = `dot ${connected ? "on" : "off"}`;
         $("fresh").textContent = connected
-          ? `GitHub à jour ${ago(state.lastRefresh)} · ${Number(state.metrics?.totalCostUsd ?? 0).toFixed(2)} $${state.activity ? ` · ${state.activity}` : ""}`
+          ? `${state.mode === "local" ? "Local" : "GitHub"} à jour ${ago(state.lastRefresh)} · ${Number(state.metrics?.totalCostUsd ?? 0).toFixed(2)} $${state.activity ? ` · ${state.activity}` : ""}`
           : "orchestrateur hors ligne";
         const ap = state.autopilot;
         const apButton = $("autopilot");

@@ -53,7 +53,9 @@ import {
   STATUS_LABELS,
   type ErrorCode,
 } from "./decisions.ts";
-import type { GitHub, PullRequest } from "./github.ts";
+import type { Forge } from "./forge.ts";
+import type { PullRequest } from "./github.ts";
+import { LocalForge } from "./localForge.ts";
 import { fixPrompt, localFixPrompt, taskPrompt } from "./prompts.ts";
 import { reviewComment, reviewPullRequest, runValidations } from "./review.ts";
 import { startResumableRun, type RunHandle } from "./runner.ts";
@@ -68,6 +70,7 @@ import {
   ensureWorktree,
   fastForwardInto,
   fetchOrigin,
+  headSha,
   localBranchExists,
   prepareWorktree,
   pushBranch,
@@ -132,7 +135,7 @@ const TOOL_NAMES: Record<string, string> = {
 
 export class Orchestrator {
   private readonly config: Config;
-  private readonly github: GitHub;
+  private readonly github: Forge;
   private readonly store: Store;
   private readonly repoDir: string;
   // `handle` is absent for manual runs: nothing runs on this machine.
@@ -141,6 +144,22 @@ export class Orchestrator {
   private readonly reviewQueue: { pr: number; reviewer: string }[] = [];
   private readonly interrupted: RunRecord[] = [];
   private ticking = false;
+
+  // Local mode: tasks and PRs are JSON records, branches never leave this machine.
+  private isLocal(): boolean {
+    return this.github instanceof LocalForge;
+  }
+
+  // Full git refs: the remote-tracking branch on GitHub, the plain branch in local mode.
+  private baseRef(): string {
+    const base = baseBranch(this.config);
+    return this.isLocal() ? base : `origin/${base}`;
+  }
+
+  private headRef(branch: string): string {
+    return this.isLocal() ? branch : `origin/${branch}`;
+  }
+
   private readonly launching = new Set<string>();
   private readonly reviewAttempts = new Map<number, number>();
   private readonly loggedOnce = new Set<string>();
@@ -148,7 +167,7 @@ export class Orchestrator {
   private lastDeliveredCheck = 0;
   private release: { ahead: number; pr?: number; error?: string } = { ahead: 0 };
 
-  constructor(config: Config, github: GitHub, store: Store, repoDir: string) {
+  constructor(config: Config, github: Forge, store: Store, repoDir: string) {
     this.config = config;
     this.github = github;
     this.store = store;
@@ -205,7 +224,7 @@ export class Orchestrator {
       await ensureWorktree(this.repoDir, agent.worktree);
       // Resume an interrupted run instead of starting over: from its pushed branch, or from
       // its local one (agents no longer push, so that is the usual case).
-      const pushed = await remoteBranchExists(agent.worktree, branch);
+      const pushed = !this.isLocal() && (await remoteBranchExists(agent.worktree, branch));
       const local = !pushed && (await localBranchExists(agent.worktree, branch));
       const resume = pushed || local;
       if (pushed) {
@@ -213,7 +232,11 @@ export class Orchestrator {
       } else if (local) {
         await checkoutLocalBranch(agent.worktree, branch);
       } else {
-        await prepareWorktree(agent.worktree, { detach: base });
+        await prepareWorktree(
+          agent.worktree,
+          { detach: this.baseRef() },
+          { fetch: !this.isLocal() },
+        );
         await deleteLocalBranch(agent.worktree, branch);
       }
       const issueText = await this.github.issueText(issue.number);
@@ -224,7 +247,16 @@ export class Orchestrator {
         issue.number,
         undefined,
         branch,
-        taskPrompt(agentId, agent, issue.number, branch, resume, base, issueText),
+        taskPrompt({
+          agentId,
+          agent,
+          issue: issue.number,
+          branch,
+          base,
+          baseRef: this.baseRef(),
+          resume,
+          spec: issueText,
+        }),
       );
     } finally {
       this.launching.delete(agentId);
@@ -253,13 +285,17 @@ export class Orchestrator {
     this.assertTaskBudgetAvailable(issue);
     const base = baseBranch(this.config);
     await ensureWorktree(this.repoDir, agent.worktree);
-    await prepareWorktree(agent.worktree, { branch: pr.headRefName });
+    await prepareWorktree(
+      agent.worktree,
+      this.isLocal() ? { local: pr.headRefName } : { branch: pr.headRefName },
+      { fetch: !this.isLocal() },
+    );
     // The base branch moves while a PR waits: bring it in first. A clean merge costs no agent
     // run at all; only real conflicts are handed to the agent.
     const sync =
       base === productionBranch(this.config)
         ? "up-to-date"
-        : await syncWithBase(agent.worktree, base);
+        : await syncWithBase(agent.worktree, this.baseRef(), !this.isLocal());
     const reasons = review?.reasons ?? [];
     const conflictOnly = reasons.length > 0 && reasons.every((r) => r.startsWith(CONFLICT_REASON));
     if (sync !== "conflict" && conflictOnly) {
@@ -269,17 +305,22 @@ export class Orchestrator {
       await this.review(prNumber, this.config.defaultReviewer);
       return;
     }
-    const feedback =
-      [
-        ...reasons,
-        ...(review?.reviewerComments ?? []),
-        ...(sync === "conflict"
-          ? [`${CONFLICT_REASON} ${base} : les fichiers contiennent des marqueurs de conflit`]
-          : []),
-        ...(humanNote.trim() ? [`Note de l'orchestrateur humain : ${humanNote.trim()}`] : []),
-      ]
-        .map((l) => `- ${l}`)
-        .join("\n") || "- Relire la PR et corriger les défauts signalés en commentaire.";
+    const errors = [
+      ...reasons.map((msg) => ({ src: "review", msg })),
+      ...(review?.reviewerComments ?? []).map((msg) => ({ src: "reviewer", msg })),
+      ...(sync === "conflict"
+        ? [
+            {
+              src: "merge",
+              msg: `${CONFLICT_REASON} ${base} : marqueurs de conflit dans les fichiers`,
+            },
+          ]
+        : []),
+      ...(humanNote.trim() ? [{ src: "human", msg: humanNote.trim() }] : []),
+    ];
+    if (errors.length === 0) {
+      errors.push({ src: "review", msg: "Relire la PR et corriger les défauts signalés." });
+    }
     await this.github.setLabels(prNumber, [STATUS_LABELS.running], this.labelsOn(pr));
     this.start(
       agentId,
@@ -287,7 +328,16 @@ export class Orchestrator {
       issue ?? 0,
       prNumber,
       pr.headRefName,
-      fixPrompt(agentId, agent, issue ?? 0, prNumber, pr.headRefName, feedback, base),
+      fixPrompt({
+        agentId,
+        agent,
+        issue: issue ?? 0,
+        pr: prNumber,
+        branch: pr.headRefName,
+        base,
+        baseRef: this.baseRef(),
+        errors,
+      }),
       pr.headRefOid,
     );
   }
@@ -380,6 +430,12 @@ export class Orchestrator {
         agentId,
         reviewerId: effectiveReviewerId,
         pr,
+        headRef: this.headRef(pr.headRefName),
+        fetch: !this.isLocal(),
+        validated:
+          this.store.data.validated?.[pr.headRefName]?.sha === pr.headRefOid
+            ? { log: this.store.data.validated[pr.headRefName]?.log ?? "" }
+            : undefined,
         files,
         issue,
         diff: filterDiff(rawDiff),
@@ -470,6 +526,12 @@ export class Orchestrator {
   }
 
   async merge(prNumber: number): Promise<void> {
+    if (this.isLocal() && this.release.pr === prNumber) {
+      await this.github.mergeRelease(prNumber);
+      this.store.log("info", `Publication #${prNumber} mergée par l'humain`);
+      this.lastReleaseCheck = 0;
+      return;
+    }
     const pr = this.requirePr(prNumber);
     if (this.isReleasePr(pr)) {
       await this.github.mergeRelease(prNumber);
@@ -479,6 +541,19 @@ export class Orchestrator {
     }
     this.store.log("info", `PR #${prNumber} mergée par l'humain (${pr.title})`);
     await this.refresh();
+  }
+
+  // Local PRs have no web page: the dashboard's « voir le diff » opens this text.
+  async diffOf(prNumber: number): Promise<string> {
+    return this.github.pullRequestDiff(prNumber);
+  }
+
+  async importTasks(): Promise<number> {
+    if (!(this.github instanceof LocalForge)) throw new Error("Import inutile : mode GitHub");
+    const added = await this.github.importIssues();
+    this.store.log("info", `${added} tâche(s) importée(s) depuis GitHub`);
+    await this.refresh();
+    return added;
   }
 
   setAutopilot(enabled: boolean): void {
@@ -618,7 +693,7 @@ export class Orchestrator {
   // to the base branch so that they follow the same flow.
   private async retargetPullRequests(): Promise<void> {
     const base = baseBranch(this.config);
-    if (base === productionBranch(this.config)) return;
+    if (this.isLocal() || base === productionBranch(this.config)) return;
     for (const pr of this.store.live.prs) {
       if (!agentOfBranch(this.config, pr.headRefName) || pr.baseRefName === base) continue;
       await this.github
@@ -633,7 +708,9 @@ export class Orchestrator {
   private async maintainRelease(): Promise<void> {
     const base = baseBranch(this.config);
     const prod = productionBranch(this.config);
-    if (base === prod || this.reviewing !== undefined) return;
+    if (base === prod) return;
+    if (this.github instanceof LocalForge) return this.maintainReleaseLocal(this.github);
+    if (this.reviewing !== undefined) return;
     if (Date.now() - this.lastReleaseCheck < RELEASE_CHECK_MS) return;
     this.lastReleaseCheck = Date.now();
     this.reviewing = 0; // the review worktree is used here: reviews wait
@@ -641,7 +718,7 @@ export class Orchestrator {
       const dir = this.config.reviewWorktree;
       await ensureWorktree(this.repoDir, dir);
       await fetchOrigin(dir);
-      if ((await aheadCount(dir, base, prod)) > 0) {
+      if ((await aheadCount(dir, `origin/${base}`, `origin/${prod}`)) > 0) {
         const merged = await fastForwardInto(dir, base, prod);
         if (!merged) {
           const error = `${base} et ${prod} sont en conflit : à résoudre à la main`;
@@ -651,7 +728,7 @@ export class Orchestrator {
         }
         this.store.log("info", `${prod} fusionné dans ${base}`);
       }
-      const ahead = await aheadCount(dir, prod, base);
+      const ahead = await aheadCount(dir, `origin/${prod}`, `origin/${base}`);
       let pr = this.store.live.prs.find((p) => p.headRefName === base && p.baseRefName === prod);
       if (ahead > 0 && !pr) {
         await this.github.createPullRequest(
@@ -670,6 +747,40 @@ export class Orchestrator {
     } finally {
       this.reviewing = undefined;
       this.startNextQueuedReview();
+    }
+  }
+
+  // Local mode: production comes in, the base branch is pushed once when it is ahead, and the
+  // publish PR is opened on GitHub. Nothing else in the loop touches the network.
+  private async maintainReleaseLocal(local: LocalForge): Promise<void> {
+    const base = baseBranch(this.config);
+    const prod = productionBranch(this.config);
+    if (Date.now() - this.lastReleaseCheck < RELEASE_CHECK_MS) return;
+    this.lastReleaseCheck = Date.now();
+    try {
+      const result = await local.publishBase();
+      if (result.conflict) {
+        const error = `${base} et ${prod} sont en conflit : à résoudre à la main`;
+        this.release = { ahead: this.release.ahead, error };
+        this.autoError("release-sync", error);
+        return;
+      }
+      let pr = await local.releasePullRequest();
+      if (result.ahead > 0 && !pr) {
+        await local.createPullRequest(
+          prod,
+          base,
+          `Publier ${base} → ${prod}`,
+          `Regroupe le travail mergé dans \`${base}\` (${result.ahead} commits).\n\n` +
+            `Merger avec **Create a merge commit** (pas « squash »), pour que \`${base}\` reste à jour.`,
+        );
+        pr = await local.releasePullRequest();
+      }
+      if (result.pushed)
+        this.store.log("info", `${base} poussé sur GitHub (${result.ahead} commits d'avance)`);
+      this.release = { ahead: result.ahead, pr };
+    } catch (error) {
+      this.autoError("release", (error as Error).message);
     }
   }
 
@@ -845,7 +956,11 @@ export class Orchestrator {
     const base = baseBranch(this.config);
     const dir = agent.worktree;
     const isFix = run.kind === "fix";
-    const ahead = await commitsAhead(dir, `origin/${isFix ? run.branch : base}`);
+    // A correction is judged on what it added to the branch, a task on what it added to base.
+    const ahead = await commitsAhead(
+      dir,
+      isFix ? (run.startSha ?? this.headRef(run.branch)) : this.baseRef(),
+    );
     if (ahead === 0) {
       await this.giveUp(
         run,
@@ -858,7 +973,7 @@ export class Orchestrator {
       );
       return;
     }
-    const files = await changedFiles(dir, base);
+    const files = await changedFiles(dir, this.baseRef());
     const perimeter = decideReview({
       files,
       allowedPaths: agent.allowedPaths,
@@ -868,9 +983,12 @@ export class Orchestrator {
       fixRoundsDone: 0,
       maxFixRounds: 99,
     });
-    const problems = perimeter.outcome === "changes" ? [...perimeter.reasons] : [];
+    const problems: { src: string; msg: string }[] =
+      perimeter.outcome === "changes"
+        ? perimeter.reasons.map((msg) => ({ src: "perimetre", msg }))
+        : [];
     const validations = await runValidations(dir);
-    if (!validations.ok) problems.push(validations.log.slice(-1800));
+    if (!validations.ok) problems.push({ src: "checks", msg: validations.log.slice(-1800) });
 
     if (problems.length > 0) {
       const round = (run.localRound ?? 0) + 1;
@@ -886,17 +1004,34 @@ export class Orchestrator {
           run.issue,
           run.pr,
           run.branch,
-          localFixPrompt(run.agent, agent, run.issue, run.branch, problems.join("\n"), round),
+          localFixPrompt({
+            agentId: run.agent,
+            agent,
+            issue: run.issue,
+            branch: run.branch,
+            base,
+            baseRef: this.baseRef(),
+            errors: problems,
+            round,
+          }),
           undefined,
           round,
         );
         return;
       }
-      await this.giveUp(run, "aucune PR (vérifications en échec)", problems.join("\n"));
+      await this.giveUp(
+        run,
+        "aucune PR (vérifications en échec)",
+        problems.map((p) => `${p.src} : ${p.msg}`).join("\n"),
+      );
       return;
     }
 
-    await pushBranch(dir, run.branch);
+    if (!this.isLocal()) await pushBranch(dir, run.branch);
+    (this.store.data.validated ??= {})[run.branch] = {
+      sha: await headSha(dir),
+      log: validations.log.trim(),
+    };
     let pr = await this.github.findPullRequest(run.branch);
     if (!pr) {
       const title = this.store.live.issues.find((i) => i.number === run.issue)?.title ?? run.branch;
@@ -1066,6 +1201,7 @@ export class Orchestrator {
     const agentLabels = new Map(Object.entries(this.config.agents).map(([id, a]) => [a.label, id]));
     return {
       repo: this.config.repo,
+      mode: this.isLocal() ? "local" : "github",
       lastRefresh: live.lastTick,
       activity: live.activity,
       reviewing: this.reviewing && this.reviewing > 0 ? this.reviewing : undefined,

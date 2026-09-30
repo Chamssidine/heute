@@ -13,12 +13,21 @@ const agent: AgentConfig = {
   brief: "docs/agents/x.md",
   allowedPaths: [],
 };
+const common = { agentId: "X", agent, issue: 12, branch: "x/i12", base: "dev", baseRef: "dev" };
+const errors = [{ src: "checks", msg: "typecheck : erreur" }];
+
+// The variable part of every prompt is one JSON object on the last line.
+function message(prompt: string): Record<string, unknown> {
+  const line = prompt.split("\n").at(-1) ?? "";
+  assert.match(line, /^Message : \{/);
+  return JSON.parse(line.slice("Message : ".length)) as Record<string, unknown>;
+}
 
 test("agent prompts give no GitHub access and never ask for a push or a PR", () => {
   const prompts = [
-    taskPrompt("X", agent, 12, "x/i12", false, "dev", "# #12 Titre\n\nCritères"),
-    fixPrompt("X", agent, 12, 40, "x/i12", "- corrige", "dev"),
-    localFixPrompt("X", agent, 12, "x/i12", "typecheck : erreur", 1),
+    taskPrompt({ ...common, resume: false, spec: "# #12 Titre\n\nCritères" }),
+    fixPrompt({ ...common, pr: 40, errors }),
+    localFixPrompt({ ...common, errors, round: 1 }),
   ];
   for (const prompt of prompts) {
     assert.doesNotMatch(prompt, /gh (issue|pr)/);
@@ -26,8 +35,30 @@ test("agent prompts give no GitHub access and never ask for a push or a PR", () 
   }
 });
 
-test("the task prompt carries the issue text, so the agent does not fetch it", () => {
-  const prompt = taskPrompt("X", agent, 12, "x/i12", false, "dev", "# #12 Titre\n\nCritères");
-  assert.match(prompt, /Critères/);
-  assert.match(prompt, /origin\/dev/);
+test("the message to the agent is JSON: type, task, refs and the spec, with the rules first", () => {
+  const prompt = taskPrompt({ ...common, resume: false, spec: "# #12 Titre\n\nCritères" });
+  const m = message(prompt);
+  assert.deepEqual(
+    {
+      v: m["v"],
+      t: m["t"],
+      id: m["id"],
+      branch: m["branch"],
+      baseRef: m["baseRef"],
+      resume: m["resume"],
+    },
+    { v: 1, t: "task", id: 12, branch: "x/i12", baseRef: "dev", resume: false },
+  );
+  assert.match(String(m["spec"]), /Critères/);
+  assert.ok(prompt.indexOf("Le message de l'orchestrateur") < prompt.indexOf("Message : "));
+});
+
+test("corrections are a list of {src, msg}, never free text", () => {
+  const fix = message(fixPrompt({ ...common, pr: 40, errors }));
+  assert.equal(fix["t"], "fix");
+  assert.equal(fix["pr"], 40);
+  assert.deepEqual(fix["errors"], errors);
+  const check = message(localFixPrompt({ ...common, errors, round: 2 }));
+  assert.equal(check["t"], "check");
+  assert.equal(check["round"], 2);
 });

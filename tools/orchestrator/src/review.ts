@@ -23,6 +23,11 @@ export interface ReviewRequest {
   agentId: string | undefined;
   reviewerId: string;
   pr: { number: number; headRefName: string };
+  // Full ref of the PR head (origin/<branch> on GitHub, the local branch in local mode).
+  headRef: string;
+  fetch: boolean;
+  // Set when the orchestrator already validated exactly this commit.
+  validated?: { log: string };
   files: string[];
   issue: number | undefined;
   // Given to the reviewer as files: it then needs no shell command at all
@@ -81,8 +86,10 @@ export async function reviewPullRequest(req: ReviewRequest): Promise<ReviewResul
     return { ...perimeter, reviewerComments: [], validationLog: "" };
 
   req.onLine("Relecture : préparation du worktree et validations…");
-  await prepareWorktree(config.reviewWorktree, { detach: req.pr.headRefName });
-  const validations = await runValidations(config.reviewWorktree);
+  await prepareWorktree(config.reviewWorktree, { detach: req.headRef }, { fetch: req.fetch });
+  const validations = req.validated
+    ? { ok: true, log: req.validated.log }
+    : await runValidations(config.reviewWorktree);
   if (!validations.ok) {
     const decision = decideReview({ ...base, validationsPassed: false, reviewerApproved: true });
     return { ...decision, reviewerComments: [], validationLog: validations.log };
