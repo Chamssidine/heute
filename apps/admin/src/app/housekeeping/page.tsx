@@ -1,6 +1,5 @@
-import { ComingSoon } from "../../components/ComingSoon.tsx";
-import { de } from "../../strings/de.ts";
+import { HousekeepingBoard } from "../../components/HousekeepingBoard.tsx";
 
 export default function Page() {
-  return <ComingSoon title={de.nav.housekeeping} />;
+  return <HousekeepingBoard />;
 }
