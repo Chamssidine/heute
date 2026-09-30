@@ -1,158 +1,182 @@
-import type { ViewState } from "../../lib/query/index.ts";
+import { useQuery } from "@tanstack/react-query";
+import { toViewState, type ViewState } from "../../lib/query/index.ts";
+import { supabase } from "../../lib/supabase/index.ts";
 import { useAuth } from "../auth/hooks.ts";
 import type { AppRole, Department } from "../auth/model.ts";
-import { useKitchenDay } from "../kitchen/hooks.ts";
-import type { KitchenDay } from "../kitchen/model.ts";
-import { useMyShifts } from "../shifts/hooks.ts";
-import type { ShiftDay } from "../shifts/model.ts";
+import { applyKitchenDayChanges, type KitchenDay } from "../kitchen/model.ts";
+import type { TasksSupabaseClient } from "../tasks/api.ts";
 import { useTasksDay } from "../tasks/hooks.ts";
 import type { TasksDay } from "../tasks/model.ts";
 import {
+  fetchTodayKitchen,
+  fetchTodayShift,
+  TODAY_ERROR_MESSAGES,
+  type TodaySupabaseClient,
+} from "./api.ts";
+import {
   createTodayView,
   getTodayCardOrder,
-  todayShiftFixture,
+  type TodayShift,
   type TodayView,
   type UserRoleOrDepartment,
 } from "./model.ts";
 
+export const TODAY_QUERY_KEY = ["today", "day"] as const;
+
 export interface UseTodayOptions {
   role?: AppRole | string;
   department?: Department | string;
-  shift?: ShiftDay | null;
-  tasks?: TasksDay | null;
-  kitchen?: KitchenDay | null;
+  client?: TodaySupabaseClient;
+  /** Dernière consultation : les repas et menus modifiés depuis sont marqués `changed`. */
   lastSeen?: string | null;
 }
 
 /**
- * Hook pour l'écran d'accueil « Heute » (contrat L -> U).
- * Renvoie un ViewState<TodayView> en composant les hooks existants
- * (useKitchenDay, useTasksDay, useMyShifts, useAuth), sans endpoint dédié (PLAN §4.3).
+ * État d'une source de données (requête) réduit à ce dont l'agrégat a besoin.
+ */
+export interface TodaySource<T> {
+  data?: T;
+  error?: unknown;
+  isLoading: boolean;
+  /** Requête en pause faute de réseau (TanStack `fetchStatus === "paused"`). */
+  isPaused: boolean;
+  /** Heure de la dernière réponse du serveur, en millisecondes. */
+  updatedAtMs?: number;
+  retry: () => void;
+}
+
+export interface TodaySources {
+  date: string;
+  roleOrDepartment: UserRoleOrDepartment;
+  shift: TodaySource<TodayShift | null>;
+  kitchen: TodaySource<KitchenDay>;
+  /** `null` si le rôle n'affiche pas la carte des tâches. */
+  tasks: TodaySource<TasksDay | null> | null;
+}
+
+/**
+ * Agrège les sources en un ViewState<TodayView> (fonction pure, testée sans React).
+ */
+export function combineTodaySources(sources: TodaySources): ViewState<TodayView> {
+  const parts: TodaySource<unknown>[] = [sources.shift, sources.kitchen];
+  if (sources.tasks) {
+    parts.push(sources.tasks);
+  }
+
+  const failed = parts.find((p) => p.error != null);
+  const isLoading = parts.some((p) => p.isLoading);
+  const isOffline =
+    parts.some((p) => p.isPaused) ||
+    (failed?.error instanceof Error && failed.error.message === TODAY_ERROR_MESSAGES.networkError);
+  const retry = () => parts.forEach((p) => p.retry());
+
+  const { shift, kitchen, tasks } = sources;
+  const ready =
+    shift.data !== undefined &&
+    kitchen.data !== undefined &&
+    (tasks === null || tasks.data !== undefined);
+
+  const timestamps = parts.flatMap((p) => (p.updatedAtMs != null ? [p.updatedAtMs] : []));
+  const updatedAt =
+    timestamps.length > 0 ? new Date(Math.max(...timestamps)).toISOString() : undefined;
+
+  const view = ready
+    ? createTodayView({
+        date: sources.date,
+        shift: shift.data ?? null,
+        tasks: tasks?.data ?? null,
+        kitchen: kitchen.data,
+        roleOrDepartment: sources.roleOrDepartment,
+        updatedAt,
+      })
+    : undefined;
+
+  return toViewState<TodayView>({
+    data: view,
+    error: failed?.error,
+    isLoading: isLoading && !view,
+    isOffline,
+    updatedAt: view?.lastUpdatedAt ?? updatedAt,
+    isEmpty: isTodayViewEmpty,
+    onRetry: retry,
+  });
+}
+
+function isTodayViewEmpty(view: TodayView): boolean {
+  const { totals } = view.guests;
+  const noMeals = Object.values(totals).every((t) => t.total === 0);
+  return (
+    view.myShift === null &&
+    !view.myTasks?.hasTasks &&
+    noMeals &&
+    view.menu.mittag === null &&
+    view.menu.abend === null
+  );
+}
+
+function tasksSource(state: ViewState<TasksDay>): TodaySource<TasksDay | null> {
+  return {
+    data: state.data ?? (state.status === "empty" ? null : undefined),
+    error: state.status === "error" ? new Error(state.message ?? "") : undefined,
+    isLoading: state.status === "loading",
+    isPaused: state.status === "offline",
+    retry: () => {
+      if (state.status === "error" || state.status === "offline") {
+        state.onRetry?.();
+      }
+    },
+  };
+}
+
+/**
+ * Hook de l'écran « Heute » (contrat L -> U) : agrège mon service, mes tâches, les repas et le menu
+ * du jour, lus avec la session de l'utilisateur (la RLS fait foi). Signature inchangée.
  *
- * Procédure de mesure du chargement en 4G sur Android (Critère d'acceptation) :
- * 1. Configuration du throttling réseau 4G :
- *    - Émulateur Android : Network Speed = LTE ou Good 4G (ou Chrome inspect chrome://inspect avec profil "Fast 4G" 4 Mbps down / 3 Mbps up / 20ms RTT).
- * 2. Point de départ du chrono (T0) :
- *    - Déclenchement de la navigation vers l'écran « Heute » / montage initial appelant `useToday()`.
- * 3. Point d'arrivée du chrono (T1) :
- *    - Réception de l'état `status === "success"` (toutes les cartes ont leurs données composées et affichables, masquage des skeletons).
- * 4. Métrique cible :
- *    - T1 - T0 < 1,5 s en connexion 4G grâce à la composition parallèle et à l'absence d'aller-retours cascade.
+ * Mesure du chargement en 4G (Android) : T0 = montage de l'écran appelant `useToday()`,
+ * T1 = premier `status === "success"` ; cible T1 - T0 < 1,5 s (requêtes en parallèle).
  */
 export function useToday(date: string, options?: UseTodayOptions): ViewState<TodayView> {
   const auth = useAuth();
-  const kitchenState = useKitchenDay(date, { lastSeen: options?.lastSeen });
-  const tasksState = useTasksDay(date);
-  const month = date.slice(0, 7);
-  const shiftsState = useMyShifts(month, { lastSeen: options?.lastSeen });
+  const client = options?.client ?? (supabase as unknown as TodaySupabaseClient);
+  const employeeId = auth.user?.id;
+  const lastSeen = options?.lastSeen;
 
-  // 1. Détermination du rôle ou département de l'utilisateur
-  const effectiveRoleOrDept: UserRoleOrDepartment = {
+  const roleOrDepartment: UserRoleOrDepartment = {
     role: options?.role ?? auth.user?.role,
     department: options?.department ?? auth.user?.department,
   };
-  const cardOrder = getTodayCardOrder(effectiveRoleOrDept);
-  const requiresTasks = cardOrder.includes("my_tasks");
+  const requiresTasks = getTodayCardOrder(roleOrDepartment).includes("my_tasks");
 
-  // 2. Propagation des états de chargement provenant des sources dépendantes
-  if (options?.kitchen === undefined && kitchenState.status === "loading") {
-    return {
-      status: "loading",
-      updatedAt: kitchenState.updatedAt,
-    };
-  }
+  const shiftQuery = useQuery({
+    queryKey: [...TODAY_QUERY_KEY, date, "shift", employeeId],
+    queryFn: () => fetchTodayShift(date, employeeId ?? "", client),
+    enabled: employeeId != null,
+  });
+  const kitchenQuery = useQuery({
+    queryKey: [...TODAY_QUERY_KEY, date, "kitchen"],
+    queryFn: () => fetchTodayKitchen(date, client),
+  });
+  const tasksState = useTasksDay(date, { client: client as unknown as TasksSupabaseClient });
 
-  if (requiresTasks && options?.tasks === undefined && tasksState.status === "loading") {
-    return {
-      status: "loading",
-      updatedAt: tasksState.updatedAt,
-    };
-  }
-
-  if (options?.shift === undefined && shiftsState.status === "loading") {
-    return {
-      status: "loading",
-      updatedAt: shiftsState.updatedAt,
-    };
-  }
-
-  // 3. Propagation des états d'erreur provenant des sources dépendantes
-  if (options?.kitchen === undefined && kitchenState.status === "error") {
-    return {
-      status: "error",
-      message: kitchenState.message,
-      onRetry: kitchenState.onRetry,
-      updatedAt: kitchenState.updatedAt,
-    };
-  }
-
-  if (requiresTasks && options?.tasks === undefined && tasksState.status === "error") {
-    return {
-      status: "error",
-      message: tasksState.message,
-      onRetry: tasksState.onRetry,
-      updatedAt: tasksState.updatedAt,
-    };
-  }
-
-  if (options?.shift === undefined && shiftsState.status === "error") {
-    return {
-      status: "error",
-      message: shiftsState.message,
-      onRetry: shiftsState.onRetry,
-      updatedAt: shiftsState.updatedAt,
-    };
-  }
-
-  // 4. Extraction et composition des données
-  let shift: ShiftDay | null = options?.shift ?? null;
-  if (!shift) {
-    if (shiftsState.status === "success" && shiftsState.data) {
-      shift = shiftsState.data.days.find((d) => d.date === date) ?? null;
-    }
-    if (!shift && date === todayShiftFixture.date) {
-      shift = todayShiftFixture;
-    }
-  }
-
-  const tasks: TasksDay | null =
-    options?.tasks !== undefined
-      ? options.tasks
-      : tasksState.status === "success"
-        ? tasksState.data
-        : null;
-
-  const kitchen: KitchenDay | null =
-    options?.kitchen !== undefined
-      ? options.kitchen
-      : kitchenState.status === "success"
-        ? kitchenState.data
-        : null;
-
-  // 5. Cas où aucune donnée n'est disponible pour la date demandée
-  if (!shift && !tasks && !kitchen) {
-    return {
-      status: "empty",
-    };
-  }
-
-  // 6. Fraîcheur des données provenant des sources (sans repli arbitraire en dur)
-  const updatedAt =
-    kitchenState.updatedAt ?? kitchen?.updatedAt ?? tasksState.updatedAt ?? shiftsState.updatedAt;
-
-  // 7. Composition du TodayView via createTodayView
-  const todayView = createTodayView({
-    date,
-    shift,
-    tasks,
-    kitchen,
-    roleOrDepartment: effectiveRoleOrDept,
-    updatedAt,
+  const toSource = <T>(q: typeof shiftQuery | typeof kitchenQuery, data: T | undefined) => ({
+    data,
+    error: q.error,
+    isLoading: q.isLoading || (q === shiftQuery && employeeId == null),
+    isPaused: q.fetchStatus === "paused",
+    updatedAtMs: q.dataUpdatedAt > 0 ? q.dataUpdatedAt : undefined,
+    retry: () => {
+      void q.refetch();
+    },
   });
 
-  return {
-    status: "success",
-    data: todayView,
-    updatedAt: todayView.lastUpdatedAt,
-  };
+  return combineTodaySources({
+    date,
+    roleOrDepartment,
+    shift: toSource(shiftQuery, shiftQuery.data),
+    kitchen: toSource(
+      kitchenQuery,
+      kitchenQuery.data ? applyKitchenDayChanges(kitchenQuery.data, lastSeen) : undefined,
+    ),
+    tasks: requiresTasks ? tasksSource(tasksState) : null,
+  });
 }

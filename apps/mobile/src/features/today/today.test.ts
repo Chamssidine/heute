@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { useToday } from "./hooks.ts";
+import { mapTodayError, TODAY_ERROR_MESSAGES } from "./api.ts";
+import { combineTodaySources, type TodaySource } from "./hooks.ts";
 import {
+  rowsToKitchenDay,
+  shiftRowToShiftDay,
   createTodayView,
   formatStandLabel,
   formatTodayDateHeader,
@@ -20,7 +23,8 @@ import {
   todayTasksFixture,
   type TodayCardId,
 } from "./model.ts";
-import { FIXTURE_TASK_ITEMS } from "../tasks/model.ts";
+import { applyKitchenDayChanges, kitchenDayFixture } from "../kitchen/model.ts";
+import { FIXTURE_TASK_ITEMS, tasksDayFixture } from "../tasks/model.ts";
 
 describe("features/today (P2-07 [L])", () => {
   describe("model.ts - Ordre des cartes par rôle (screens.md §6.1)", () => {
@@ -185,45 +189,192 @@ describe("features/today (P2-07 [L])", () => {
     });
   });
 
-  describe("hooks.ts - useToday(date: string)", () => {
-    it("renvoie ViewState<TodayView> avec status success pour la date de référence en composant les hooks", () => {
-      const state = useToday("2026-09-30");
+  describe("model.ts - lignes de la base → modèle", () => {
+    const shiftRow = {
+      date: "2026-10-01",
+      type: "td" as const,
+      start1: 420,
+      end1: 780,
+      start2: 1080,
+      end2: 1260,
+      break_min: 0,
+    };
+    const totalsRows = [
+      {
+        date: "2026-10-01",
+        meal: "frueh" as const,
+        total: 30,
+        veg: 3,
+        vegan: 1,
+        mos: 0,
+        allergies: 0,
+      },
+      {
+        date: "2026-10-01",
+        meal: "mittag" as const,
+        total: 20,
+        veg: 2,
+        vegan: 0,
+        mos: 1,
+        allergies: 1,
+      },
+      {
+        date: "2026-10-01",
+        meal: "lunchpaket" as const,
+        total: 10,
+        veg: 0,
+        vegan: 0,
+        mos: 0,
+        allergies: 0,
+      },
+    ];
+    const menuRows = [
+      {
+        id: "m1",
+        date: "2026-10-01",
+        meal: "mittag" as const,
+        main_dish: "Gemüsesuppe",
+        veg_variant: null,
+        dessert: "Obst",
+        created_at: "2026-09-30T10:00:00Z",
+        updated_at: "2026-09-30T10:00:00Z",
+      },
+    ];
 
-      assert.equal(state.status, "success");
-      assert.ok(state.data);
-      assert.equal(state.data.date, "2026-09-30");
-      assert.equal(state.data.lastUpdatedLabel, "Stand 14:32");
-      assert.equal(state.updatedAt, "14:32");
+    it("transforme une ligne shifts en service affichable", () => {
+      const shift = shiftRowToShiftDay(shiftRow);
+      assert.equal(shift.date, "2026-10-01");
+      assert.equal(shift.hours, "07:00–13:00\n18:00–21:00");
+      assert.equal(shift.badgeLabel, "TD");
     });
 
-    it("applique l'ordre Housekeeping / BFD lorsque le rôle correspondant est passé", () => {
-      const state = useToday("2026-09-30", { department: "housekeeping" });
-
-      assert.equal(state.status, "success");
-      assert.ok(state.data);
-      assert.deepEqual(state.data.cardOrder, ["my_shift", "my_tasks", "guests", "menu"]);
-      assert.equal(state.data.isHousekeepingRole, true);
+    it("transforme meal_totals et menu_items en KitchenDay", () => {
+      const day = rowsToKitchenDay("2026-10-01", totalsRows, menuRows, "2026-10-01T12:00:00Z");
+      assert.equal(day.totals.frueh.total, 30);
+      assert.equal(day.totals.mittag.al, 1);
+      assert.equal(day.totals.lunchpaket.total, 10);
+      assert.equal(day.totals.abend.total, 0);
+      assert.equal(day.noLunch, false);
+      assert.equal(day.noDinner, true);
+      assert.equal(day.menu.mittag?.mainDish, "Gemüsesuppe");
+      assert.equal(day.menu.abend, null);
     });
 
-    it("applique l'ordre Küche / Küchenleitung lorsque le département cuisine est passé", () => {
-      const state = useToday("2026-09-30", { department: "kueche" });
+    it("ignore les lignes d'une autre date", () => {
+      const day = rowsToKitchenDay("2026-10-02", totalsRows, menuRows);
+      assert.equal(day.totals.frueh.total, 0);
+      assert.equal(day.menu.mittag, null);
+    });
+  });
 
+  describe("hooks.ts - combineTodaySources", () => {
+    const ok = <T>(data: T, extra: Partial<TodaySource<T>> = {}): TodaySource<T> => ({
+      data,
+      isLoading: false,
+      isPaused: false,
+      updatedAtMs: Date.UTC(2026, 9, 1, 12, 32),
+      retry: () => undefined,
+      ...extra,
+    });
+    const base = {
+      date: "2026-10-01",
+      roleOrDepartment: { department: "housekeeping" },
+    };
+    const kitchen = rowsToKitchenDay("2026-10-01", [], []);
+
+    it("renvoie success avec « Stand HH:MM » tiré de la dernière réponse du serveur", () => {
+      const state = combineTodaySources({
+        ...base,
+        shift: ok(
+          shiftRowToShiftDay({
+            date: "2026-10-01",
+            type: "normal",
+            start1: 480,
+            end1: 990,
+            start2: null,
+            end2: null,
+            break_min: 30,
+          }),
+        ),
+        kitchen: ok(kitchen),
+        tasks: ok(tasksDayFixture),
+      });
       assert.equal(state.status, "success");
-      assert.ok(state.data);
-      assert.deepEqual(state.data.cardOrder, ["my_shift", "guests", "menu"]);
-      assert.equal(state.data.isKitchenRole, true);
+      assert.equal(state.data?.date, "2026-10-01");
+      assert.equal(state.data?.lastUpdatedLabel, "Stand 14:32");
+      assert.equal(state.data?.myTasks?.progressLabel, "2 von 6 erledigt");
     });
 
-    it("renvoie status empty pour une date inconnue sans données sans message arbitraire", () => {
-      const state = useToday("2099-01-01");
+    it("renvoie loading tant qu'une source charge", () => {
+      const state = combineTodaySources({
+        ...base,
+        shift: { isLoading: true, isPaused: false, retry: () => undefined },
+        kitchen: ok(kitchen),
+        tasks: null,
+      });
+      assert.equal(state.status, "loading");
+    });
 
+    it("renvoie empty sans service, tâche, repas ni menu", () => {
+      const state = combineTodaySources({
+        ...base,
+        shift: ok(null),
+        kitchen: ok(kitchen),
+        tasks: ok(null),
+      });
       assert.equal(state.status, "empty");
-      assert.equal(state.data, undefined);
+    });
+
+    it("renvoie error avec le message allemand, sans texte brut de la base", () => {
+      const state = combineTodaySources({
+        ...base,
+        shift: ok(null),
+        kitchen: {
+          isLoading: false,
+          isPaused: false,
+          error: mapTodayError({ message: "row for user 42 krank" }),
+          retry: () => undefined,
+        },
+        tasks: null,
+      });
+      assert.equal(state.status, "error");
+      assert.equal(state.message, TODAY_ERROR_MESSAGES.fetchFailed);
+    });
+
+    it("renvoie offline avec les données en cache quand le réseau manque", () => {
+      const state = combineTodaySources({
+        ...base,
+        shift: ok(null),
+        kitchen: ok(kitchen, { isPaused: true }),
+        tasks: ok(tasksDayFixture),
+      });
+      assert.equal(state.status, "offline");
+      assert.ok(state.data);
+    });
+
+    it("n'attend pas les tâches pour un rôle cuisine", () => {
+      const state = combineTodaySources({
+        date: "2026-10-01",
+        roleOrDepartment: { department: "kueche" },
+        shift: ok(null),
+        kitchen: ok(rowsToKitchenDay("2026-10-01", [], [])),
+        tasks: null,
+      });
+      assert.equal(state.status, "empty");
     });
 
     describe("Indicateurs changed et previous dans Heute (P4-07 [L])", () => {
+      const todayWith = (lastSeen: string | null) =>
+        combineTodaySources({
+          date: "2026-09-30",
+          roleOrDepartment: { department: "kueche" },
+          shift: ok(null),
+          kitchen: ok(applyKitchenDayChanges(kitchenDayFixture, lastSeen)),
+          tasks: null,
+        });
+
       it("première ouverture : rien n'est marqué (changed: false, changeNotice: null)", () => {
-        const state = useToday("2026-09-30", { lastSeen: null });
+        const state = todayWith(null);
         assert.equal(state.status, "success");
         assert.ok(state.data);
 
@@ -238,7 +389,7 @@ describe("features/today (P2-07 [L])", () => {
 
       it("repas et menu modifiés : portent changed: true, highlight et la mention Geändert", () => {
         // Dernière consultation à 13:00 Berlin, modification à 14:05 Berlin
-        const state = useToday("2026-09-30", { lastSeen: "2026-09-30T11:00:00Z" });
+        const state = todayWith("2026-09-30T11:00:00Z");
         assert.equal(state.status, "success");
         assert.ok(state.data);
 
@@ -254,7 +405,7 @@ describe("features/today (P2-07 [L])", () => {
       });
 
       it("consultation postérieure : le marquage disparaît (changed: false, changeNotice: null)", () => {
-        const state = useToday("2026-09-30", { lastSeen: "2026-09-30T12:30:00Z" });
+        const state = todayWith("2026-09-30T12:30:00Z");
         assert.equal(state.status, "success");
         assert.ok(state.data);
 
