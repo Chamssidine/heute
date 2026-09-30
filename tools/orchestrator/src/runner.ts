@@ -76,16 +76,15 @@ export interface RunRequest {
 
 const MAX_RESUMES = 3;
 
-function injectBudgetFlags(spec: LaunchSpec, effort?: string, budgetUsd?: number): LaunchSpec {
-  if (!effort && !budgetUsd) return spec;
-  const args = [...spec.args];
-  if (effort) {
-    args.push("--effort", effort);
-  }
-  if (budgetUsd) {
-    args.push("--max-budget-usd", String(budgetUsd));
-  }
-  return { ...spec, args };
+// Each CLI has its own flags: unknown ones make the CLI refuse to start (agy has no budget flag).
+function injectBudgetFlags(
+  adapter: CliAdapter,
+  spec: LaunchSpec,
+  effort?: string,
+  budgetUsd?: number,
+): LaunchSpec {
+  const extra = adapter.limitArgs?.(effort, budgetUsd) ?? [];
+  return extra.length > 0 ? { ...spec, args: [...spec.args, ...extra] } : spec;
 }
 
 function resumeMessage(refused: string[]): string {
@@ -107,6 +106,7 @@ export function startResumableRun(req: RunRequest): RunHandle {
 
   let current = run(
     injectBudgetFlags(
+      req.adapter,
       req.adapter.launch(req.settings, req.model, req.role, req.prompt),
       req.effort,
       req.budgetUsd,
@@ -124,6 +124,7 @@ export function startResumableRun(req: RunRequest): RunHandle {
       req.onLine(`Commande refusée (${refused.join(", ")}) : reprise ${attempt}/${MAX_RESUMES}`);
       current = run(
         injectBudgetFlags(
+          req.adapter,
           resume.launch(req.settings, req.model, req.role, conversation, resumeMessage(refused)),
           req.effort,
           req.budgetUsd,
