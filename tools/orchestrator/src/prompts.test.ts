@@ -7,7 +7,7 @@ const agent: AgentConfig = {
   name: "Test",
   cli: "claude",
   model: "m",
-  worktree: "C:\dev\heute-x",
+  worktree: "C:/dev/heute-x",
   label: "agent:X",
   branchPrefix: "x",
   brief: "docs/agents/x.md",
