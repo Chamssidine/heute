@@ -616,7 +616,10 @@ export class Orchestrator {
     if (this.isLocal() && this.release.pr === prNumber) {
       await this.github.mergeRelease(prNumber);
       this.store.log("info", `Publication #${prNumber} mergée par l'humain`);
+      // The card goes away now, not at the next check: a second click would do nothing.
+      this.release = { ahead: 0 };
       this.lastReleaseCheck = 0;
+      this.store.emit("change");
       return;
     }
     const pr = this.requirePr(prNumber);
