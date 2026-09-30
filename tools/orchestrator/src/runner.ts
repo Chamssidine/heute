@@ -92,8 +92,9 @@ function resumeMessage(refused: string[]): string {
 ${refused.map((c) => `- ${c}`).join("\n")}
 Ce n'est pas bloquant. Ne les relance pas et ne les contourne pas.
 Continue la tâche là où tu t'es arrêté, uniquement avec les commandes autorisées :
-git, npm run typecheck|lint|test|format, npm test, npm install, npm ci,
-npx prettier|eslint|tsc|expo, gh issue view|comment, gh pr create|view|diff|comment|list.`;
+git status|diff|log|show|add|rm|mv|commit|switch|checkout|restore|rev-parse|branch|stash,
+npm run typecheck|lint|test|format, npm test, npm install, npm ci, npx prettier|eslint|tsc|expo.
+Pas de gh, pas de git push : l'orchestrateur pousse à ta place.`;
 }
 
 // Starts a run and, for CLIs that stop at the first refused command, continues the same

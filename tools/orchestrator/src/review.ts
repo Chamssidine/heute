@@ -37,7 +37,7 @@ export interface ReviewRequest {
 const MAX_FIX_ROUNDS = 2;
 const REVIEW_INPUT_DIR = ".orchestrator-review";
 
-async function runValidations(dir: string): Promise<{ ok: boolean; log: string }> {
+export async function runValidations(dir: string): Promise<{ ok: boolean; log: string }> {
   let log = "";
   for (const script of ["typecheck", "lint", "test"]) {
     const r = await exec(`npm run ${script}`, [], { cwd: dir, shell: true, timeoutMs: 600_000 });
@@ -134,7 +134,12 @@ export async function reviewPullRequest(req: ReviewRequest): Promise<ReviewResul
     validationsPassed: true,
     reviewerApproved: verdict.approve,
   });
-  return { ...decision, reviewerComments: verdict.comments, validationLog: validations.log, m: usage };
+  return {
+    ...decision,
+    reviewerComments: verdict.comments,
+    validationLog: validations.log,
+    m: usage,
+  };
 }
 
 export function reviewComment(reviewerId: string, result: ReviewResult): string {

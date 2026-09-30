@@ -378,7 +378,7 @@
       .agents {
         display: grid;
         gap: 10px;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
       }
       .agent {
         background: var(--surface);
@@ -653,6 +653,168 @@
           justify-content: flex-start;
         }
       }
+
+      .overview {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px 18px;
+        display: grid;
+        gap: 14px;
+      }
+      .ov-head {
+        display: flex;
+        align-items: baseline;
+        gap: 10px 18px;
+        flex-wrap: wrap;
+      }
+      .ov-big {
+        font-size: 30px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1;
+      }
+      .ov-big small {
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--text-2);
+        letter-spacing: 0;
+      }
+      .ov-pct {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--ok-text);
+        background: var(--ok-bg);
+        padding: 2px 10px;
+        border-radius: 999px;
+      }
+      .ov-rest {
+        margin-left: auto;
+        color: var(--text-2);
+        font-size: 13px;
+      }
+      .stack {
+        display: flex;
+        height: 12px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: var(--surface-muted);
+      }
+      .stack span {
+        display: block;
+        min-width: 0;
+        transition: width 0.5s ease;
+      }
+      .seg-done {
+        background: var(--ok-text);
+      }
+      .seg-review {
+        background: var(--accent);
+      }
+      .seg-doing {
+        background: var(--warn-border);
+      }
+      .seg-todo {
+        background: transparent;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 16px;
+        font-size: 12px;
+        color: var(--text-2);
+      }
+      .legend i {
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        margin-right: 6px;
+        vertical-align: 0;
+        background: var(--border-strong);
+      }
+      .legend i.seg-done {
+        background: var(--ok-text);
+      }
+      .legend i.seg-review {
+        background: var(--accent);
+      }
+      .legend i.seg-doing {
+        background: var(--warn-border);
+      }
+      .legend b {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .ov-cols {
+        display: grid;
+        gap: 14px 28px;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      }
+      .ov-cols h3 {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text-3);
+        margin: 0 0 8px;
+      }
+      .bar-row {
+        display: grid;
+        grid-template-columns: 64px 1fr auto;
+        align-items: center;
+        gap: 10px;
+        font-size: 12px;
+        margin-bottom: 7px;
+      }
+      .bar-row .lbl {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 600;
+        min-width: 0;
+      }
+      .bar-row .val {
+        color: var(--text-2);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .track {
+        height: 7px;
+        border-radius: 999px;
+        background: var(--surface-muted);
+        overflow: hidden;
+      }
+      .track > span {
+        display: block;
+        height: 100%;
+        border-radius: 999px;
+        background: var(--ok-text);
+        transition: width 0.5s ease;
+      }
+      .minibar {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        color: var(--text-3);
+      }
+      .agent .row .pill {
+        flex: none;
+      }
+      .agent .row > div {
+        min-width: 0;
+      }
+      .agent .row > div > div {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .alert-note {
+        color: var(--bad-text);
+        font-weight: 600;
+      }
     </style>
   </head>
   <body>
@@ -665,9 +827,15 @@
         <div class="row small">
           <span class="dot" id="dot"></span><span class="muted" id="fresh">connexion…</span>
           <button class="ghost" id="refresh" aria-label="Actualiser depuis GitHub"></button>
+          <button id="autopilot" aria-pressed="true">Autopilote</button>
           <button id="journal">Journal <span class="badge" id="errors" hidden></span></button>
         </div>
       </header>
+
+      <section aria-labelledby="h-progress">
+        <h2 id="h-progress">Progression</h2>
+        <div class="overview" id="overview"></div>
+      </section>
 
       <section aria-labelledby="h-inbox">
         <h2 id="h-inbox">À toi <span class="count" id="inbox-count"></span></h2>
@@ -886,7 +1054,7 @@
       function confirmMerge(pr) {
         const risky = pr.review?.outcome !== "ready";
         openDialog({
-          title: `Merger #${pr.number} dans main ?`,
+          title: `Merger #${pr.number} dans ${pr.target ?? state.autopilot?.base ?? "main"} ?`,
           body: [
             h("p", { style: "margin:0" }, pr.title),
             risky
@@ -1192,6 +1360,58 @@
           }
         }
 
+        if (state.autopilot?.pausedReason) {
+          items.push({
+            kind: "error",
+            tone: "bad",
+            icon: "alert",
+            title: "L'autopilote s'est arrêté",
+            sub: state.autopilot.pausedReason,
+            actions: [
+              h(
+                "button",
+                {
+                  class: "primary",
+                  onclick: () => act("autopilot", { enabled: true }, "Autopilote relancé"),
+                },
+                "Reprendre",
+              ),
+            ],
+          });
+        }
+
+        const rel = state.release;
+        if (rel?.pr) {
+          const relPr = {
+            number: rel.pr,
+            title: `Publier ${state.autopilot.base} → ${state.autopilot.production}`,
+            review: { outcome: "ready" },
+            target: state.autopilot.production,
+          };
+          items.push({
+            kind: "ready",
+            tone: "ok",
+            icon: "merge",
+            title: `Publier ${state.autopilot.base} → ${state.autopilot.production}`,
+            sub: `${rel.ahead} commit${rel.ahead > 1 ? "s" : ""} prêts pour ${state.autopilot.production} · merger avec « Create a merge commit »`,
+            actions: [
+              h(
+                "button",
+                {
+                  onclick: () =>
+                    window.open(
+                      `https://github.com/${state.repo}/pull/${rel.pr}`,
+                      "_blank",
+                      "noopener",
+                    ),
+                },
+                "Voir la PR",
+              ),
+              h("button", { class: "primary", onclick: () => confirmMerge(relPr) }, "Merger"),
+            ],
+          });
+        }
+
         for (const e of recentErrors()) {
           items.push({
             kind: "error",
@@ -1299,6 +1519,146 @@
         return { label: "libre", tone: "ok" };
       }
 
+      // Progress numbers, computed from the agent issues only (the ones in the plan).
+      function overviewData() {
+        const withPr = new Set(state.prs.map((p) => p.issue).filter(Boolean));
+        const running = new Set(
+          state.agents.map((a) => a.run?.issue).filter((n) => n !== undefined),
+        );
+        const count = { done: 0, review: 0, doing: 0, todo: 0 };
+        let blocked = 0;
+        const perAgent = new Map();
+        const perPhase = new Map();
+        const bump = (map, key) => {
+          const entry = map.get(key) ?? { done: 0, total: 0 };
+          return entry;
+        };
+        for (const i of state.issues) {
+          const stage =
+            i.state === "CLOSED"
+              ? "done"
+              : running.has(i.number) || i.labels.includes("en-cours")
+                ? "doing"
+                : withPr.has(i.number)
+                  ? "review"
+                  : "todo";
+          count[stage] += 1;
+          if (stage === "todo" && i.labels.includes("bloquée")) blocked += 1;
+          const phase = i.title.match(/\bP(\d+)-/)?.[1];
+          for (const [map, key] of [
+            [perAgent, i.agent],
+            [perPhase, phase ? `P${phase}` : undefined],
+          ]) {
+            if (!key) continue;
+            const entry = bump(map, key);
+            entry.total += 1;
+            if (stage === "done") entry.done += 1;
+            map.set(key, entry);
+          }
+        }
+        const total = state.issues.length;
+        return {
+          count,
+          total,
+          blocked,
+          perAgent,
+          perPhase,
+          pct: total ? Math.round((count.done / total) * 100) : 0,
+        };
+      }
+
+      function renderOverview() {
+        const o = overviewData();
+        const rest = o.total - o.count.done;
+        const seg = (cls, n) =>
+          h("span", { class: cls, style: `width:${o.total ? (n / o.total) * 100 : 0}%` });
+        const legend = (cls, label, n) =>
+          h("span", {}, h("i", { class: cls }), `${label} `, h("b", {}, String(n)));
+        const bars = (map, order) =>
+          [...map.entries()]
+            .sort((a, b) => order(a[0]) - order(b[0]))
+            .map(([key, v]) =>
+              h(
+                "div",
+                { class: "bar-row", title: `${v.done} terminées sur ${v.total}` },
+                h("span", { class: "lbl" }, map === o.perAgent ? avatar(key, true) : null, key),
+                h(
+                  "div",
+                  {
+                    class: "track",
+                    role: "img",
+                    "aria-label": `${key} : ${v.done} sur ${v.total} tâches terminées`,
+                  },
+                  h("span", { style: `width:${v.total ? (v.done / v.total) * 100 : 0}%` }),
+                ),
+                h(
+                  "span",
+                  { class: "val" },
+                  `${v.done}/${v.total} · ${v.total ? Math.round((v.done / v.total) * 100) : 0} %`,
+                ),
+              ),
+            );
+        $("overview").replaceChildren(
+          h(
+            "div",
+            { class: "ov-head" },
+            h(
+              "div",
+              { class: "ov-big" },
+              `${o.count.done} `,
+              h("small", {}, `sur ${o.total} tâches`),
+            ),
+            h("span", { class: "ov-pct" }, `${o.pct} %`),
+            h(
+              "div",
+              { class: "ov-rest" },
+              rest === 0 ? "Tout est terminé" : `Reste ${rest} tâche${rest > 1 ? "s" : ""}`,
+              o.blocked
+                ? [
+                    " · ",
+                    h(
+                      "span",
+                      { class: "alert-note" },
+                      `${o.blocked} bloquée${o.blocked > 1 ? "s" : ""}`,
+                    ),
+                  ]
+                : null,
+            ),
+          ),
+          h(
+            "div",
+            {
+              class: "stack",
+              role: "img",
+              "aria-label": `${o.count.done} terminées, ${o.count.review} à valider, ${o.count.doing} en cours, ${o.count.todo} à faire`,
+            },
+            seg("seg-done", o.count.done),
+            seg("seg-review", o.count.review),
+            seg("seg-doing", o.count.doing),
+            seg("seg-todo", o.count.todo),
+          ),
+          h(
+            "div",
+            { class: "legend" },
+            legend("seg-done", "Fait", o.count.done),
+            legend("seg-review", "À valider", o.count.review),
+            legend("seg-doing", "En cours", o.count.doing),
+            legend("", "À faire", o.count.todo),
+          ),
+          h(
+            "div",
+            { class: "ov-cols" },
+            h(
+              "div",
+              {},
+              h("h3", {}, "Par agent"),
+              ...bars(o.perAgent, (k) => state.agents.findIndex((x) => x.id === k)),
+            ),
+            h("div", {}, h("h3", {}, "Par phase"), ...bars(o.perPhase, (k) => Number(k.slice(1)))),
+          ),
+        );
+      }
+
       function renderAgents() {
         $("agents").replaceChildren(
           ...state.agents.map((a) => {
@@ -1311,6 +1671,7 @@
                 ? `Prochaine : #${next.number} ${next.title}`
                 : "Aucune tâche prête";
             const last = a.lines.at(-1);
+            const mine = overviewData().perAgent.get(a.id);
             return h(
               "button",
               {
@@ -1345,6 +1706,24 @@
                 },
                 task,
               ),
+              mine
+                ? h(
+                    "div",
+                    { class: "minibar", title: `${mine.done} terminées sur ${mine.total}` },
+                    h(
+                      "div",
+                      { class: "track" },
+                      h("span", {
+                        style: `width:${mine.total ? (mine.done / mine.total) * 100 : 0}%`,
+                      }),
+                    ),
+                    h(
+                      "span",
+                      {},
+                      `${mine.done}/${mine.total} · ${mine.total ? Math.round((mine.done / mine.total) * 100) : 0} %`,
+                    ),
+                  )
+                : null,
               last
                 ? h(
                     "div",
@@ -1535,6 +1914,18 @@
         $("fresh").textContent = connected
           ? `GitHub à jour ${ago(state.lastRefresh)} · ${Number(state.metrics?.totalCostUsd ?? 0).toFixed(2)} $${state.activity ? ` · ${state.activity}` : ""}`
           : "orchestrateur hors ligne";
+        const ap = state.autopilot;
+        const apButton = $("autopilot");
+        if (ap) {
+          const paused = Boolean(ap.pausedReason);
+          apButton.textContent = !ap.enabled
+            ? "Autopilote : arrêté"
+            : paused
+              ? "Autopilote : en pause"
+              : "Autopilote : actif";
+          apButton.className = ap.enabled && !paused ? "primary" : "";
+          apButton.setAttribute("aria-pressed", String(ap.enabled && !paused));
+        }
         const errors = recentErrors().length;
         $("errors").hidden = errors === 0;
         $("errors").textContent = String(errors);
@@ -1589,19 +1980,21 @@
               h(
                 "ul",
                 { class: "plain" },
-                state.runs.slice(0, 10).map((r) =>
-                  h(
-                    "li",
-                    { class: "small" },
-                    h("span", { class: "pill tone-gray" }, r.agent),
-                    " ",
-                    h("span", { class: "faint" }, ago(r.endedAt ?? r.startedAt)),
-                    ` #${r.pr ?? r.issue} · ${r.result ?? "en cours"} · ${usageText(r.m)}`,
-                    r.cumulCostUsd !== undefined
-                      ? ` · cumul ${Number(r.cumulCostUsd).toFixed(3)} $`
-                      : "",
+                state.runs
+                  .slice(0, 10)
+                  .map((r) =>
+                    h(
+                      "li",
+                      { class: "small" },
+                      h("span", { class: "pill tone-gray" }, r.agent),
+                      " ",
+                      h("span", { class: "faint" }, ago(r.endedAt ?? r.startedAt)),
+                      ` #${r.pr ?? r.issue} · ${r.result ?? "en cours"} · ${usageText(r.m)}`,
+                      r.cumulCostUsd !== undefined
+                        ? ` · cumul ${Number(r.cumulCostUsd).toFixed(3)} $`
+                        : "",
+                    ),
                   ),
-                ),
               ),
             ),
           ].filter(Boolean),
@@ -1627,11 +2020,19 @@
             state.agents.map((a) => [a.id, a.run?.id, a.queue]),
             state.issues,
             state.reviewing,
+            state.autopilot,
+            state.release,
             state.events.slice(0, 5),
           ])
         )
           renderInbox();
-        if (force || changed("agents", [state.agents, state.reviewing, tick])) renderAgents();
+        if (
+          force ||
+          changed("overview", [state.issues, state.prs, state.agents.map((a) => a.run?.issue)])
+        )
+          renderOverview();
+        if (force || changed("agents", [state.agents, state.reviewing, state.issues, tick]))
+          renderAgents();
         if (
           force ||
           changed("board", [
@@ -1664,6 +2065,12 @@
       $("refresh").append(icon("refresh"));
       $("refresh").addEventListener("click", () => act("refresh", {}, "Actualisé"));
       $("journal").addEventListener("click", () => state && showJournal());
+      $("autopilot").addEventListener("click", () => {
+        if (!state?.autopilot) return;
+        lastClicked = $("autopilot");
+        const on = state.autopilot.enabled && !state.autopilot.pausedReason;
+        act("autopilot", { enabled: !on }, on ? "Autopilote arrêté" : "Autopilote activé");
+      });
       setInterval(() => render(), 5000);
       connect();
     </script>

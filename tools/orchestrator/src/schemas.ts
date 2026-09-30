@@ -58,13 +58,10 @@ export function validateAgentFinalMessage(obj: unknown): {
   }
 
   const errors = Array.isArray(o.e) ? o.e.filter((e): e is ErrorCode => typeof e === "string") : [];
-  const validations = typeof o.val === "object" && o.val !== null ? (o.val as Record<string, unknown>) : {};
+  const validations =
+    typeof o.val === "object" && o.val !== null ? (o.val as Record<string, unknown>) : {};
   const status =
-    o.s === "ok" || o.s === "fail" || o.s === "blocked"
-      ? o.s
-      : o.ok === true
-        ? "ok"
-        : "fail";
+    o.s === "ok" || o.s === "fail" || o.s === "blocked" ? o.s : o.ok === true ? "ok" : "fail";
   const message: AgentFinalMessage = {
     v: 1,
     s: status,
@@ -126,9 +123,7 @@ export function validateReviewerResponse(obj: unknown): {
     return { valid: false, error: "comments doit contenir que des strings" };
   }
 
-  const extra = Object.keys(o).filter(
-    (k) => k !== "approve" && k !== "comments",
-  );
+  const extra = Object.keys(o).filter((k) => k !== "approve" && k !== "comments");
   if (extra.length > 0) {
     return { valid: false, error: `Champs non autorisés : ${extra.join(", ")}` };
   }

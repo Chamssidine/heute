@@ -27,6 +27,8 @@ export interface RunRecord {
   prompt?: string;
   worktree?: string;
   startSha?: string;
+  // Local correction round after the orchestrator's own checks failed (0 = the first run).
+  localRound?: number;
   // Usage metrics (tokens, cost) from the LLM run.
   m?: UsageMetrics;
   // Cumul USD dépensés sur cette tâche (toutes les runs + réparations).
@@ -68,6 +70,8 @@ export interface PersistedState {
   events: EventRecord[];
   // Per agent: when the LLM provider's quota resets (ISO date). Kept across restarts.
   quotaUntil?: Record<AgentId, string>;
+  // Autopilot on/off (the human's switch) and why it stopped itself, if it did.
+  autopilot?: { enabled: boolean; pausedReason?: string; resumedAt?: string };
 }
 
 // Volatile data (GitHub snapshot, live log lines) is kept in memory only.
