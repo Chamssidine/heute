@@ -2,7 +2,7 @@
 // dashboard. The service only prepares, runs what was asked, and reviews read-only.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { adapterFor } from "./adapters/index.ts";
+import { adapterFor, type CliAdapter } from "./adapters/index.ts";
 import { agentOfBranch, type Config } from "./config.ts";
 import {
   isManualRunDone,
@@ -350,13 +350,21 @@ export class Orchestrator {
       "info",
       `Agent ${agentId} lancé (${kind}) sur #${pr ?? issue}, branche ${branch}`,
     );
-    void handle.done.then(({ code }) => this.finish(run, code));
+    void handle.done.then(({ code, stdout }) => this.finish(run, code, stdout, adapter));
   }
 
-  private async finish(run: RunRecord, code: number): Promise<void> {
+  private async finish(
+    run: RunRecord,
+    code: number,
+    stdout?: string,
+    adapter?: CliAdapter,
+  ): Promise<void> {
     this.running.delete(run.agent);
     run.endedAt = new Date().toISOString();
     run.exitCode = code;
+    if (stdout && adapter) {
+      run.m = adapter.usage(stdout);
+    }
     try {
       const quotaDelay = quotaResetDelayMs(logTail(run.logFile));
       if (quotaDelay !== undefined) {
@@ -380,7 +388,10 @@ export class Orchestrator {
         if (review) review.fixRounds += 1;
         await this.github.setLabels(pr.number, [], [STATUS_LABELS.running]);
       }
-      this.store.log("info", `Agent ${run.agent} terminé : PR #${pr.number}`);
+      const metricsStr = run.m
+        ? ` · ${run.m.turns ?? "?"} tours, ${(run.m.inputTokens ?? 0) + (run.m.cacheReadInputTokens ?? 0)} tokens, $${run.m.totalCostUsd.toFixed(2)}`
+        : "";
+      this.store.log("info", `Agent ${run.agent} terminé : PR #${pr.number}${metricsStr}`);
       await this.refresh();
       // Read-only review starts on its own: it only validates and comments.
       await this.review(pr.number, this.config.defaultReviewer);

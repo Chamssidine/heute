@@ -33,4 +33,5 @@ export const gemini: CliAdapter = {
       .filter((t): t is string => typeof t === "string");
     return texts.length > 0 ? texts.join("") : undefined;
   },
+  usage: () => undefined,
 };
