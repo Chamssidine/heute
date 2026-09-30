@@ -216,8 +216,14 @@ isOneToOne: false
 "meal_totals":
 { Args: { "from_date": string,"to_date": string }; Returns: { "date": string,"meal": Database["public"]['Enums']["meal"],"total": number,"veg": number,"vegan": number,"mos": number,"allergies": number }[]
                            },
+"save_employee":
+{ Args: { "p_contract": string,"p_department": Database["public"]['Enums']["department"],"p_display_name": string,"p_id": string,"p_reason": string,"p_role": Database["public"]['Enums']["app_role"],"p_soll_min_day": number,"p_soll_min_month": number }; Returns: string
+                           },
 "save_shift":
 { Args: { "p_break_min": number,"p_date": string,"p_employee_id": string,"p_end1": number,"p_end2": number,"p_note": string,"p_reason": string,"p_start1": number,"p_start2": number,"p_type": Database["public"]['Enums']["shift_type"] }; Returns: string
+                           },
+"set_employee_active":
+{ Args: { "p_active": boolean,"p_id": string,"p_reason": string }; Returns: undefined
                            },
 "set_task_status":
 { Args: { "p_id": string,"p_status": Database["public"]['Enums']["task_status"] }; Returns: undefined
