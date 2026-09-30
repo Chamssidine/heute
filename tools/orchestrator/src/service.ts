@@ -900,6 +900,9 @@ export class Orchestrator {
   }
 
   private async finish(run: RunRecord, code: number, stdout = ""): Promise<void> {
+    // The agent stays busy until its work is checked (and a correction, if any, has started):
+    // otherwise the autopilot hands it another task in the same folder while it is validated.
+    this.launching.add(run.agent);
     this.running.delete(run.agent);
     run.endedAt = new Date().toISOString();
     run.exitCode = code;
@@ -956,6 +959,7 @@ export class Orchestrator {
     } catch (error) {
       this.store.log("error", `Fin de l'agent ${run.agent} : ${(error as Error).message}`);
     } finally {
+      this.launching.delete(run.agent);
       this.store.save();
     }
   }
@@ -1073,6 +1077,8 @@ export class Orchestrator {
     this.refreshCumulCost(run.issue);
     this.store.log("info", `Agent ${run.agent} terminé : PR #${pr.number} (vérifiée avant envoi)`);
     await this.refresh();
+    // Checked and handed over: the agent is free again while the review (a queue) runs.
+    this.launching.delete(run.agent);
     await this.review(pr.number, this.config.defaultReviewer);
   }
 
