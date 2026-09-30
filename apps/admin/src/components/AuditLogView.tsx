@@ -1,17 +1,6 @@
 "use client";
 
-import {
-  Alert,
-  Button,
-  Group,
-  Loader,
-  Select,
-  Stack,
-  Table,
-  Text,
-  TextInput,
-  Title,
-} from "@mantine/core";
+import { Button, Card, Group, Mark, Select, Stack, Table, Text, TextInput } from "@mantine/core";
 import { useEffect, useMemo, useState } from "react";
 import {
   ACTION_LABELS,
@@ -27,6 +16,10 @@ import {
 } from "../lib/auditLog.ts";
 import { getSupabase } from "../lib/supabase.ts";
 import { de } from "../strings/de.ts";
+import { EmptyState } from "./ui/EmptyState.tsx";
+import { ErrorState } from "./ui/ErrorState.tsx";
+import { LoadingState } from "./ui/LoadingState.tsx";
+import { PageHeader } from "./ui/PageHeader.tsx";
 
 type Filters = { from: string; to: string; table: string; person: string; author: string };
 type Page = { rows: AuditRow[]; total: number };
@@ -146,65 +139,58 @@ export function AuditLogView() {
 
   return (
     <Stack>
-      <Title order={2}>{de.nav.auditLog}</Title>
-      <Group align="flex-end">
-        <TextInput
-          type="date"
-          label={de.auditLog.from}
-          value={filters.from}
-          onChange={(e) => update({ from: e.currentTarget.value })}
-        />
-        <TextInput
-          type="date"
-          label={de.auditLog.to}
-          value={filters.to}
-          onChange={(e) => update({ to: e.currentTarget.value })}
-        />
-        <Select
-          label={de.auditLog.table}
-          placeholder={de.auditLog.all}
-          data={tables}
-          value={filters.table || null}
-          onChange={(v) => update({ table: v ?? "" })}
-          clearable
-        />
-        <Select
-          label={de.auditLog.person}
-          placeholder={de.auditLog.all}
-          data={people}
-          value={filters.person || null}
-          onChange={(v) => update({ person: v ?? "" })}
-          searchable
-          clearable
-        />
-        <Select
-          label={de.auditLog.author}
-          placeholder={de.auditLog.all}
-          data={people}
-          value={filters.author || null}
-          onChange={(v) => update({ author: v ?? "" })}
-          searchable
-          clearable
-        />
-      </Group>
-      {state.status === "loading" && (
-        <Group>
-          <Loader size="sm" />
-          <Text>{de.loading}</Text>
+      <PageHeader title={de.nav.auditLog} />
+      <Card padding="sm" component="search" aria-label={de.nav.auditLog}>
+        <Group align="flex-end" gap="sm">
+          <TextInput
+            type="date"
+            label={de.auditLog.from}
+            value={filters.from}
+            onChange={(e) => update({ from: e.currentTarget.value })}
+          />
+          <TextInput
+            type="date"
+            label={de.auditLog.to}
+            value={filters.to}
+            onChange={(e) => update({ to: e.currentTarget.value })}
+          />
+          <Select
+            label={de.auditLog.table}
+            placeholder={de.auditLog.all}
+            data={tables}
+            value={filters.table || null}
+            onChange={(v) => update({ table: v ?? "" })}
+            clearable
+          />
+          <Select
+            label={de.auditLog.person}
+            placeholder={de.auditLog.all}
+            data={people}
+            value={filters.person || null}
+            onChange={(v) => update({ person: v ?? "" })}
+            searchable
+            clearable
+          />
+          <Select
+            label={de.auditLog.author}
+            placeholder={de.auditLog.all}
+            data={people}
+            value={filters.author || null}
+            onChange={(v) => update({ author: v ?? "" })}
+            searchable
+            clearable
+          />
         </Group>
-      )}
-      {state.status === "error" && (
-        <Alert color="red" role="alert">
-          {de.auditLog.loadError}
-        </Alert>
-      )}
+      </Card>
+      {state.status === "loading" && <LoadingState label={de.loading} rows={8} />}
+      {state.status === "error" && <ErrorState message={de.auditLog.loadError} />}
       {state.status === "ready" &&
         (state.page.rows.length === 0 ? (
-          <Text>{de.auditLog.empty}</Text>
+          <EmptyState title={de.auditLog.empty} />
         ) : (
           <>
             <Table.ScrollContainer minWidth={800}>
-              <Table withTableBorder verticalSpacing="xs" fz="sm">
+              <Table fz="sm">
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>{de.auditLog.when}</Table.Th>
@@ -259,9 +245,22 @@ function Entry({ row, names }: { row: AuditRow; names: ReadonlyMap<string, strin
           </Text>
         ) : (
           changes.map((c) => (
-            <Text key={c.field} size="sm">
-              {c.field}: {c.before ?? "–"} → {c.after ?? "–"}
-            </Text>
+            <Group key={c.field} gap="xs" fz="sm">
+              <Text fz="sm" fw={600} c="dimmed">
+                {c.field}
+              </Text>
+              <Text fz="sm" c="dimmed" aria-label={de.auditLog.before}>
+                {c.before ?? "–"}
+              </Text>
+              <span aria-hidden="true">→</span>
+              <Mark
+                fz="sm"
+                aria-label={de.auditLog.after}
+                style={{ backgroundColor: "var(--heute-marker)", color: "var(--heute-on-marker)" }}
+              >
+                {c.after ?? "–"}
+              </Mark>
+            </Group>
           ))
         )}
       </Table.Td>

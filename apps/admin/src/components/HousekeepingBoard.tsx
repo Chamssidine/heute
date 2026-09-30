@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Badge, Group, Loader, Select, Stack, Table, Text, Title } from "@mantine/core";
+import { Alert, Badge, Group, Select, Stack, Table, TextInput, Title } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   groupByFloor,
@@ -11,6 +11,17 @@ import {
 } from "../lib/housekeeping.ts";
 import { getSupabase } from "../lib/supabase.ts";
 import { de } from "../strings/de.ts";
+import { EmptyState } from "./ui/EmptyState.tsx";
+import { ErrorState } from "./ui/ErrorState.tsx";
+import { LoadingState } from "./ui/LoadingState.tsx";
+import { PageHeader } from "./ui/PageHeader.tsx";
+
+// tokens.md §4.1 : offen = neutre, in_arbeit = warning, erledigt = success (palettes du thème).
+const STATUS_TOKENS: Record<TaskStatus, string> = {
+  offen: "gray",
+  in_arbeit: "warning",
+  erledigt: "success",
+};
 
 type Employee = { id: string; displayName: string };
 type Data = { tasks: HousekeepingTask[]; employees: Employee[] };
@@ -91,38 +102,31 @@ export function HousekeepingBoard() {
 
   return (
     <Stack>
-      <Group>
-        <Title order={2}>{de.nav.housekeeping}</Title>
-        <input
-          type="date"
-          aria-label={de.housekeeping.date}
-          value={date}
-          onChange={(e) => {
-            if (e.target.value) {
-              setDate(e.target.value);
-            }
-          }}
-        />
-      </Group>
+      <PageHeader
+        title={de.nav.housekeeping}
+        actions={
+          <TextInput
+            type="date"
+            aria-label={de.housekeeping.date}
+            value={date}
+            onChange={(e) => {
+              if (e.currentTarget.value) {
+                setDate(e.currentTarget.value);
+              }
+            }}
+          />
+        }
+      />
       {actionError && (
-        <Alert color="red" role="alert">
+        <Alert color="danger" role="alert">
           {actionError}
         </Alert>
       )}
-      {state.status === "loading" && (
-        <Group>
-          <Loader size="sm" />
-          <Text>{de.loading}</Text>
-        </Group>
-      )}
-      {state.status === "error" && (
-        <Alert color="red" role="alert">
-          {de.housekeeping.loadError}
-        </Alert>
-      )}
+      {state.status === "loading" && <LoadingState label={de.loading} rows={6} />}
+      {state.status === "error" && <ErrorState message={de.housekeeping.loadError} />}
       {state.status === "ready" &&
         (state.data.tasks.length === 0 ? (
-          <Text>{de.housekeeping.empty}</Text>
+          <EmptyState title={de.housekeeping.empty} />
         ) : (
           <Floors data={state.data} onStatus={changeStatus} />
         ))}
@@ -141,15 +145,20 @@ function Floors({
   const options = data.employees.map((e) => ({ value: e.id, label: e.displayName }));
 
   return (
-    <Stack>
+    <Stack gap="lg">
       {groups.map((group) => (
         <Stack key={group.floor ?? "zones"} gap="xs">
-          <Title order={3}>
-            {group.floor === null
-              ? de.housekeeping.noFloor
-              : `${de.housekeeping.floor} ${group.floor}`}
-          </Title>
-          <Table withTableBorder>
+          <Group gap="xs">
+            <Title order={2}>
+              {group.floor === null
+                ? de.housekeeping.noFloor
+                : `${de.housekeeping.floor} ${group.floor}`}
+            </Title>
+            <Badge variant="default" aria-label={String(group.tasks.length)}>
+              {group.tasks.length}
+            </Badge>
+          </Group>
+          <Table>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>{de.housekeeping.room}</Table.Th>
@@ -168,6 +177,7 @@ function Floors({
                   <Table.Td>
                     {/* Pas de RPC ni de policy d'écriture pour assigned_to : désactivé (issue « contrat »). */}
                     <Select
+                      w={192}
                       data={options}
                       value={t.assignedTo}
                       placeholder={de.housekeeping.unassigned}
@@ -178,10 +188,11 @@ function Floors({
                   </Table.Td>
                   <Table.Td>
                     <Group gap="xs" wrap="nowrap">
-                      <Badge color={STATUS_COLORS[t.status]}>
+                      <Badge color={STATUS_TOKENS[t.status]} miw={96}>
                         {de.housekeeping.statuses[t.status]}
                       </Badge>
                       <Select
+                        w={144}
                         data={STATUS_OPTIONS}
                         value={t.status}
                         allowDeselect={false}
