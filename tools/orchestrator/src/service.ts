@@ -145,6 +145,7 @@ export class Orchestrator {
   private readonly reviewAttempts = new Map<number, number>();
   private readonly loggedOnce = new Set<string>();
   private lastReleaseCheck = 0;
+  private lastDeliveredCheck = 0;
   private release: { ahead: number; pr?: number; error?: string } = { ahead: 0 };
 
   constructor(config: Config, github: GitHub, store: Store, repoDir: string) {
@@ -498,6 +499,7 @@ export class Orchestrator {
     if (this.ticking) return;
     this.ticking = true;
     try {
+      await this.closeDeliveredIssues();
       await this.retargetPullRequests();
       await this.maintainRelease();
       const ap = autopilotSettings(this.config);
@@ -586,6 +588,30 @@ export class Orchestrator {
       return `Budget du jour atteint (${cost.toFixed(2)} $ sur ${ap.dailyBudgetUsd} $)`;
     }
     return undefined;
+  }
+
+  // An issue whose branch was merged is delivered, whoever merged it and into which branch
+  // (« Closes #N » does not close it when the PR targets the base branch). Left open, the
+  // autopilot would offer it again and an agent would spend tokens redoing finished work.
+  private async closeDeliveredIssues(): Promise<void> {
+    if (Date.now() - this.lastDeliveredCheck < RELEASE_CHECK_MS) return;
+    this.lastDeliveredCheck = Date.now();
+    const merged = new Set(
+      (await this.github.mergedBranches())
+        .map((b) => this.issueOfBranch(b))
+        .filter((n): n is number => n !== undefined),
+    );
+    const withOpenPr = this.issuesWithOpenPr();
+    for (const issue of this.store.live.issues) {
+      if (issue.state !== "OPEN" || !merged.has(issue.number) || withOpenPr.has(issue.number))
+        continue;
+      if (issue.labels.includes(STATUS_LABELS.running)) continue;
+      await this.github
+        .closeIssue(issue.number, "Livrée : sa PR est mergée.")
+        .then(() => this.store.log("info", `Issue #${issue.number} fermée (PR mergée)`))
+        .catch((e: Error) => this.autoError(`close${issue.number}`, e.message));
+    }
+    await this.refresh();
   }
 
   // Agent PRs opened against production (old ones, or an agent that ignored --base) are moved
