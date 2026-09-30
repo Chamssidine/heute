@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Group, Loader, Stack, Table, Text, Title } from "@mantine/core";
+import { Badge, Button, Group, Stack, Table, Text, Title } from "@mantine/core";
 import { formatHHMM } from "@heute/domain";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -16,11 +16,44 @@ import {
 import { getSupabase } from "../lib/supabase.ts";
 import { de } from "../strings/de.ts";
 import { ShiftDialog, type ShiftTarget } from "./ShiftDialog.tsx";
+import { EmptyState } from "./ui/EmptyState.tsx";
+import { ErrorState } from "./ui/ErrorState.tsx";
+import { LoadingState } from "./ui/LoadingState.tsx";
 
 type Data = { employees: ScheduleEmployee[]; shifts: ScheduleShift[] };
 type LoadState = { status: "loading" } | { status: "error" } | { status: "ready"; data: Data };
 
-const SUNDAY_BG = "var(--mantine-color-red-light)";
+// Dimanche : teinte danger douce + graisse ; les colonnes collantes restent opaques (surface dessous).
+const SUNDAY_TINT =
+  "linear-gradient(var(--mantine-color-danger-light), var(--mantine-color-danger-light))";
+const DATE_COL = 56;
+const WEEKDAY_COL = 48;
+const DAY_ROW_HEIGHT = 32;
+
+// Couleur du type de service ; le texte du code reste toujours affiché à côté (jamais la couleur seule).
+const TYPE_COLORS: Record<ScheduleShift["type"], string> = {
+  normal: "gray",
+  td: "primary",
+  sem: "success",
+  urlaub: "gray",
+  krank: "gray",
+  frei: "gray",
+};
+
+const stickyRowCell = {
+  position: "sticky" as const,
+  zIndex: 1,
+  backgroundColor: "var(--heute-surface)",
+};
+
+const stickyHead = (left: number | undefined, width?: number) => ({
+  position: "sticky" as const,
+  left,
+  width,
+  minWidth: width,
+  zIndex: left === undefined ? undefined : 2,
+  backgroundColor: "var(--heute-surface-muted)",
+});
 
 async function loadMonth(month: string): Promise<Data> {
   const supabase = getSupabase();
@@ -100,20 +133,11 @@ export function ScheduleGrid() {
           ▶
         </Button>
       </Group>
-      {state.status === "loading" && (
-        <Group>
-          <Loader size="sm" />
-          <Text>{de.loading}</Text>
-        </Group>
-      )}
-      {state.status === "error" && (
-        <Alert color="red" role="alert">
-          {de.schedule.loadError}
-        </Alert>
-      )}
+      {state.status === "loading" && <LoadingState label={de.loading} rows={8} />}
+      {state.status === "error" && <ErrorState message={de.schedule.loadError} />}
       {state.status === "ready" &&
         (state.data.employees.length === 0 ? (
-          <Text>{de.schedule.empty}</Text>
+          <EmptyState title={de.schedule.empty} />
         ) : (
           <Grid month={month} data={state.data} onSelect={setTarget} />
         ))}
@@ -152,12 +176,16 @@ function Grid({
   }, [data.shifts]);
 
   return (
-    <Table.ScrollContainer minWidth={800}>
-      <Table withTableBorder withColumnBorders verticalSpacing={2} fz="xs">
+    <Table.ScrollContainer minWidth={800} maxHeight="calc(100vh - 240px)" type="scrollarea">
+      <Table withColumnBorders verticalSpacing={0} fz="xs" aria-label={de.nav.schedule}>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th rowSpan={2}>{de.schedule.date}</Table.Th>
-            <Table.Th rowSpan={2}>{de.schedule.weekday}</Table.Th>
+            <Table.Th rowSpan={2} style={stickyHead(0, DATE_COL)}>
+              {de.schedule.date}
+            </Table.Th>
+            <Table.Th rowSpan={2} style={stickyHead(DATE_COL, WEEKDAY_COL)}>
+              {de.schedule.weekday}
+            </Table.Th>
             {data.employees.map((e) => (
               <Table.Th key={e.id} colSpan={4} ta="center">
                 {e.displayName}
@@ -174,45 +202,75 @@ function Grid({
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {days.map((d) => (
-            <Table.Tr key={d.date} bg={d.isSunday ? SUNDAY_BG : undefined}>
-              <Table.Td fw={d.isSunday ? 700 : undefined}>
-                {d.date.slice(8)}.{d.date.slice(5, 7)}.
-              </Table.Td>
-              <Table.Td fw={d.isSunday ? 700 : undefined}>{d.weekday}</Table.Td>
-              {data.employees.flatMap((e) => {
-                const shift = byEmployee.get(e.id)?.get(d.date);
-                const cell = shiftCell(shift);
-                const open = () => onSelect({ employee: e, date: d.date, shift });
-                const props = { onClick: open, style: { cursor: "pointer" } };
-                return [
-                  <Table.Td key={`${e.id}-s`} {...props}>
-                    {cell.start}
-                  </Table.Td>,
-                  <Table.Td key={`${e.id}-e`} {...props}>
-                    {cell.end}
-                  </Table.Td>,
-                  <Table.Td key={`${e.id}-c`} {...props}>
-                    {cell.code}
-                  </Table.Td>,
-                  <Table.Td key={`${e.id}-i`} {...props}>
-                    {cell.ist}
-                  </Table.Td>,
-                ];
-              })}
-            </Table.Tr>
-          ))}
+          {days.map((d) => {
+            const dayStyle = {
+              ...stickyRowCell,
+              backgroundImage: d.isSunday ? SUNDAY_TINT : undefined,
+              fontWeight: d.isSunday ? 600 : undefined,
+            };
+            return (
+              <Table.Tr key={d.date} h={DAY_ROW_HEIGHT}>
+                <Table.Td style={{ ...dayStyle, left: 0, width: DATE_COL, minWidth: DATE_COL }}>
+                  {d.date.slice(8)}.{d.date.slice(5, 7)}.
+                </Table.Td>
+                <Table.Td
+                  style={{ ...dayStyle, left: DATE_COL, width: WEEKDAY_COL, minWidth: WEEKDAY_COL }}
+                >
+                  {d.weekday}
+                </Table.Td>
+                {data.employees.flatMap((e) => {
+                  const shift = byEmployee.get(e.id)?.get(d.date);
+                  const cell = shiftCell(shift);
+                  const style = {
+                    cursor: "pointer",
+                    backgroundColor:
+                      shift?.type === "frei" ? "var(--heute-surface-muted)" : undefined,
+                    backgroundImage: d.isSunday ? SUNDAY_TINT : undefined,
+                  };
+                  const props = {
+                    onClick: () => onSelect({ employee: e, date: d.date, shift }),
+                    style,
+                  };
+                  return [
+                    <Table.Td key={`${e.id}-s`} {...props}>
+                      {cell.start}
+                    </Table.Td>,
+                    <Table.Td key={`${e.id}-e`} {...props}>
+                      {cell.end}
+                    </Table.Td>,
+                    <Table.Td key={`${e.id}-c`} {...props}>
+                      {cell.code && shift ? (
+                        <Badge size="xs" radius="xs" color={TYPE_COLORS[shift.type]}>
+                          {cell.code}
+                        </Badge>
+                      ) : null}
+                    </Table.Td>,
+                    <Table.Td key={`${e.id}-i`} {...props} ta="right">
+                      {cell.ist}
+                    </Table.Td>,
+                  ];
+                })}
+              </Table.Tr>
+            );
+          })}
         </Table.Tbody>
         <Table.Tfoot>
           {[de.schedule.totalIst, de.schedule.totalSoll, de.schedule.balance].map((label, i) => (
             <Table.Tr key={label}>
-              <Table.Th colSpan={2}>{label}</Table.Th>
+              <Table.Th colSpan={2} style={stickyHead(0)}>
+                {label}
+              </Table.Th>
               {data.employees.map((e) => {
                 const shifts = [...(byEmployee.get(e.id)?.values() ?? [])];
                 const b = employeeBalance(e, shifts);
                 const value = [b.istMinutes, b.sollMinutes, b.diffMinutes][i] ?? 0;
                 return (
-                  <Table.Th key={e.id} colSpan={4} ta="center">
+                  <Table.Th
+                    key={e.id}
+                    colSpan={4}
+                    ta="right"
+                    style={{ fontVariantNumeric: "tabular-nums" }}
+                  >
                     {formatHHMM(value)}
                   </Table.Th>
                 );
