@@ -1,5 +1,5 @@
 // Schémas JSON pour les messages d'agent et de relecteur.
-// Version 1.
+// Version 1 : agent (fin de run) + relecteur.
 
 export const AGENT_FINAL_MESSAGE_SCHEMA = {
   v: 1,
