@@ -2,6 +2,9 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import { Stack } from "expo-router";
 // Imported for its side effect: connects NetInfo to TanStack Query's onlineManager.
 import "../lib/network";
+// Imported for its side effect: subscribes to Supabase Realtime once the user is signed in, and
+// refreshes the screens when shifts, tasks, meals or the menu change.
+import "../lib/realtime";
 import { asyncStoragePersister, queryClient } from "../lib/query";
 
 // The auth session is not persisted: Supabase keeps it in secure storage and stays the
