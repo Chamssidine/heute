@@ -26,6 +26,8 @@ export interface RunRecord {
   prompt?: string;
   worktree?: string;
   startSha?: string;
+  // Cumul USD dépensés sur cette tâche (toutes les runs + réparations).
+  cumulCostUsd?: number;
 }
 
 export interface ReviewRecord {
