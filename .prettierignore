@@ -14,3 +14,4 @@ AGENTS.md
 CLAUDE.md
 GEMINI.md
 packages/domain/src/database.types.ts
+apps/admin/next-env.d.ts
