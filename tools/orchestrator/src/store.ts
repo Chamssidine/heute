@@ -73,6 +73,8 @@ export interface PersistedState {
   events: EventRecord[];
   // Per agent: when the LLM provider's quota resets (ISO date). Kept across restarts.
   quotaUntil?: Record<AgentId, string>;
+  // Extra spend the human granted per task (issue number), on top of the configured budget.
+  budgetExtra?: Record<string, number>;
   // Agents created from the dashboard: merged into the config at startup.
   customAgents?: Record<string, AgentConfig>;
   // Per branch: the commit the orchestrator already validated (typecheck, lint, tests) and the

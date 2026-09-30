@@ -1383,8 +1383,23 @@
               tone: "warn",
               icon: "alert",
               title: `#${pr.number} ${pr.title}`,
-              sub: `${who} · ${r.reasons[0] ?? "à vérifier"}`,
+              sub: `${who} · ${r.reasons[0] ?? "à vérifier"}${r.reviewer === "budget" ? ` · dépensé ${Number(pr.cost).toFixed(2)} $ sur ${Number(pr.budget).toFixed(2)} $` : ""}`,
               actions: [
+                r.reviewer === "budget" && pr.issue
+                  ? h(
+                      "button",
+                      {
+                        class: "primary",
+                        onclick: () =>
+                          act(
+                            "extendBudget",
+                            { issue: pr.issue, add: 1.5 },
+                            `Budget de #${pr.issue} étendu de 1,50 $`,
+                          ),
+                      },
+                      "Étendre le budget (+1,50 $)",
+                    )
+                  : null,
                 pr.agent ? h("button", { onclick: () => sendBack(pr) }, "Renvoyer") : null,
                 h("button", { onclick: () => chooseReviewer(pr) }, "Relire"),
                 h(
