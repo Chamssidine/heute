@@ -765,6 +765,16 @@
             ? `${Math.floor(s / 60)} min`
             : `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`;
       }
+      function usageText(m) {
+        if (!m) return "usage indisponible";
+        const tokens =
+          (m.inputTokens ?? 0) +
+          (m.outputTokens ?? 0) +
+          (m.cacheReadInputTokens ?? 0) +
+          (m.cacheCreationInputTokens ?? 0);
+        const cost = Number(m.totalCostUsd ?? 0).toFixed(3);
+        return `${tokens.toLocaleString("fr-FR")} tokens · ${cost} $`;
+      }
 
       function toast(text, kind = "info") {
         const t = $("toast");
@@ -1523,7 +1533,7 @@
         $("repo").href = `https://github.com/${state.repo}`;
         $("dot").className = `dot ${connected ? "on" : "off"}`;
         $("fresh").textContent = connected
-          ? `GitHub à jour ${ago(state.lastRefresh)}${state.activity ? ` · ${state.activity}` : ""}`
+          ? `GitHub à jour ${ago(state.lastRefresh)} · ${Number(state.metrics?.totalCostUsd ?? 0).toFixed(2)} $${state.activity ? ` · ${state.activity}` : ""}`
           : "orchestrateur hors ligne";
         const errors = recentErrors().length;
         $("errors").hidden = errors === 0;
@@ -1568,6 +1578,28 @@
                     h("span", { class: "faint" }, ago(e.at)),
                     " ",
                     e.text,
+                  ),
+                ),
+              ),
+            ),
+            h(
+              "div",
+              {},
+              h("div", { class: "small muted", style: "margin-bottom:6px" }, "Derniers runs"),
+              h(
+                "ul",
+                { class: "plain" },
+                state.runs.slice(0, 10).map((r) =>
+                  h(
+                    "li",
+                    { class: "small" },
+                    h("span", { class: "pill tone-gray" }, r.agent),
+                    " ",
+                    h("span", { class: "faint" }, ago(r.endedAt ?? r.startedAt)),
+                    ` #${r.pr ?? r.issue} · ${r.result ?? "en cours"} · ${usageText(r.m)}`,
+                    r.cumulCostUsd !== undefined
+                      ? ` · cumul ${Number(r.cumulCostUsd).toFixed(3)} $`
+                      : "",
                   ),
                 ),
               ),

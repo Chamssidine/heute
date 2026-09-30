@@ -6,7 +6,7 @@
   "updated": "2026-09-30",
   "verdict": "live_partial",
   "status": {
-    "summary": "K1-K9 ont des PR mergées (#67, #68, #69, #70, #71, #72, #73), mais plusieurs livraisons restent partielles par rapport au plan initial.",
+    "summary": "K1-K9 ont des PR mergées (#67, #68, #69, #70, #71, #72, #73). K1, K2, K3, K5, K7 et K9 sont maintenant branchés côté runtime ; K4 et K6 gardent des écarts assumés.",
     "merged_prs": {
       "K1": 67,
       "K2": 68,
@@ -19,10 +19,9 @@
       "K9": 71
     },
     "next": [
-      "Brancher l'affichage tableau de bord des métriques tokens/coûts.",
-      "Transformer le cumul coût par tâche en garde bloquant à 1,5 USD.",
-      "Lire l'enveloppe JSON de fin de run agent au lieu de la demander seulement dans le prompt.",
-      "Aligner le routage relecteur avec des modèles réellement configurés, ou ajuster le plan si codex remplace haiku."
+      "Aligner le routage relecteur avec des modèles réellement configurés, ou ajuster le plan si codex remplace haiku.",
+      "Ajouter une relance automatique quand le relecteur renvoie un JSON invalide.",
+      "Étendre la collecte usage/coût aux CLIs qui l'exposent, en plus de Claude."
     ]
   },
 
@@ -69,10 +68,10 @@
   "steps": [
     {
       "id": "K1", "p": 1, "t": "observabilité",
-      "st": "partial",
+      "st": "done",
       "pr": 67,
-      "delivered": "usage Claude parsé et stocké dans RunRecord.m ; champs de coût/tokens disponibles dans l'état",
-      "remaining": "afficher tokens et coût dans public/index.html ; couvrir agy/codex si leurs flux exposent l'usage",
+      "delivered": "usage Claude parsé et stocké dans RunRecord.m ; dashboard affiche le total coût et le journal affiche tokens/coût par run",
+      "remaining": "étendre agy/codex si leurs flux exposent l'usage",
       "do": "adapter.usage(stdout) -> {in,out,cr,cw,usd,turns,ms} ; stocké dans RunRecord.m ; affiché par run, par agent, cumul par issue",
       "files": ["src/adapters/types.ts", "src/adapters/claude.ts", "src/store.ts", "src/service.ts", "public/index.html"],
       "verify_first": "format d'usage d'agy et codex dans leurs stream-json (ne rien supposer)",
@@ -81,10 +80,10 @@
     },
     {
       "id": "K2", "p": 2, "t": "budget",
-      "st": "partial",
+      "st": "done",
       "pr": 68,
-      "delivered": "effort et budgetUsd existent dans la config et sont injectés dans les runs compatibles",
-      "remaining": "mapper le dépassement budget vers BUDGET_EXCEEDED et attente humaine ; vérifier les flags codex exec",
+      "delivered": "effort et budgetUsd existent dans la config, sont injectés dans les runs agent/relecteur, et le dépassement budget est normalisé en BUDGET_EXCEEDED",
+      "remaining": "vérifier les flags codex exec contre la version locale si codex devient agent principal",
       "do": "config par agent et relecteur : effort, maxBudgetUsd ; claude --effort --max-budget-usd, agy --effort ; dépassement -> code BUDGET_EXCEEDED -> humain",
       "defaults": { "agent": { "effort": "medium", "usd": 1.5 }, "reviewer": { "effort": "medium", "usd": 0.5 } },
       "files": ["src/config.ts", "config.json", "src/adapters/claude.ts", "src/adapters/antigravity.ts"],
@@ -113,10 +112,10 @@
     },
     {
       "id": "K5", "p": 5, "t": "codes d'erreur",
-      "st": "partial",
+      "st": "done",
       "pr": 70,
-      "delivered": "ErrorCode et ERROR_FIX_LIMITS existent, avec limites par code pour les décisions de réparation",
-      "remaining": "ajouter les codes manquants du plan (QUOTA, BUDGET_EXCEEDED, TIMEOUT) ou réduire la liste cible ; stocker/exposer les codes dans les ReviewRecord et l'UI si nécessaire",
+      "delivered": "ErrorCode et ERROR_FIX_LIMITS existent, avec limites par code ; QUOTA, BUDGET_EXCEEDED et TIMEOUT sont couverts",
+      "remaining": "exposer les codes ReviewRecord dans l'UI si le besoin de diagnostic augmente",
       "do": "enum stable + libellé FR dérivé ; limites de réparation par code",
       "codes": ["SCOPE_VIOLATION", "CONTRACT_CHANGE", "TYPECHECK_FAIL", "LINT_FAIL", "TEST_FAIL", "REVIEW_REJECT", "NO_VERDICT", "CMD_REFUSED", "QUOTA", "BUDGET_EXCEEDED", "TIMEOUT", "SECURITY_CONCERN"],
       "limits": { "SCOPE_VIOLATION": 1, "TYPECHECK_FAIL": 3, "LINT_FAIL": 3, "TEST_FAIL": 3, "REVIEW_REJECT": 2, "NO_VERDICT": 1, "CONTRACT_CHANGE": 0, "SECURITY_CONCERN": 0 },
@@ -137,8 +136,8 @@
       "id": "K7", "p": 7, "t": "enveloppe de fin de run",
       "st": "partial",
       "pr": 73,
-      "delivered": "prompt agent demande une enveloppe JSON de fin et src/schemas.ts contient validateAgentFinalMessage",
-      "remaining": "brancher la lecture de finalText sur validateAgentFinalMessage ; utiliser s/ok/e/val pour bloquer ou labelliser sans lire la prose",
+      "delivered": "prompt agent demande une enveloppe JSON de fin ; finalText est validé par validateAgentFinalMessage et stocké dans RunRecord.final",
+      "remaining": "affiner les transitions par code si un agent renvoie fail avec PR ouverte",
       "do": "dernier message de l'agent = {v:1,id:issue,s:ok|fail|blocked,pr,val:{tc,li,te},e:[codes]} ; lu par finalText ; l'orchestrateur revalide quand même",
       "files": ["src/schemas.ts", "src/prompts.ts", "src/service.ts"],
       "done_when": "s=blocked -> label bloquée sans lire la prose"
@@ -155,10 +154,10 @@
     },
     {
       "id": "K9", "p": 9, "t": "garde-coût par tâche",
-      "st": "partial",
+      "st": "done",
       "pr": 71,
-      "delivered": "RunRecord.cumulCostUsd existe comme champ persistant",
-      "remaining": "calculer le cumul tâche + corrections + relectures ; bloquer les nouvelles relectures/corrections auto au-delà de 1,5 USD ; ajouter le test du seuil",
+      "delivered": "RunRecord.cumulCostUsd est calculé ; runs, corrections et relectures sont cumulés ; relectures et corrections auto sont bloquées au-delà de 1,5 USD",
+      "remaining": "ajouter un test unitaire dédié au seuil si la logique bouge encore",
       "do": "cumul usd tâche + corrections + relectures ; > 1.5 USD -> humain, plus de relecture ni correction automatique",
       "files": ["src/service.ts", "src/decisions.ts", "src/decisions.test.ts"],
       "done_when": "test du seuil"

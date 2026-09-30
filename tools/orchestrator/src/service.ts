@@ -42,12 +42,14 @@ import {
   queueFor,
   quotaResetDelayMs,
   STATUS_LABELS,
+  type ErrorCode,
 } from "./decisions.ts";
 import type { GitHub, PullRequest } from "./github.ts";
 import { fixPrompt, taskPrompt } from "./prompts.ts";
 import { reviewComment, reviewPullRequest } from "./review.ts";
 import { startResumableRun, type RunHandle } from "./runner.ts";
 import type { RunKind, RunRecord, Store } from "./store.ts";
+import { validateAgentFinalMessage } from "./schemas.ts";
 import {
   deleteLocalBranch,
   ensureWorktree,
@@ -56,6 +58,8 @@ import {
 } from "./worktree.ts";
 
 const ALL_STATUS = Object.values(STATUS_LABELS);
+const TASK_BUDGET_USD = 1.5;
+const BUDGET_ERROR = /budget (?:exceeded|reached)|max(?:imum)? budget|BUDGET_EXCEEDED/i;
 
 // End of a run's log: provider errors (quota, rate limit) are printed last.
 function logTail(file: string): string {
@@ -76,6 +80,22 @@ function clock(iso: string): string {
     minute: "2-digit",
     timeZone: "Europe/Berlin",
   });
+}
+
+function parseJsonObject(text: string | undefined): unknown {
+  const json = text?.match(/\{[\s\S]*\}/)?.[0];
+  if (!json) return undefined;
+  try {
+    return JSON.parse(json);
+  } catch {
+    return undefined;
+  }
+}
+
+function runErrorCode(code: number, tail: string): ErrorCode | undefined {
+  if (BUDGET_ERROR.test(tail)) return "BUDGET_EXCEEDED";
+  if (code !== 0 && /Durée maximale dépassée|timed? out|timeout/i.test(tail)) return "TIMEOUT";
+  return undefined;
 }
 const TOOL_NAMES: Record<string, string> = {
   claude: "Claude Code",
@@ -181,6 +201,7 @@ export class Orchestrator {
         .map((l) => `- ${l}`)
         .join("\n") || "- Relire la PR et corriger les défauts signalés en commentaire.";
     const issue = this.issueOfBranch(pr.headRefName);
+    this.assertTaskBudgetAvailable(issue);
     await ensureWorktree(this.repoDir, agent.worktree);
     await prepareWorktree(agent.worktree, { branch: pr.headRefName });
     await this.github.setLabels(prNumber, [STATUS_LABELS.running], this.labelsOn(pr));
@@ -240,6 +261,24 @@ export class Orchestrator {
       await ensureWorktree(this.repoDir, this.config.reviewWorktree);
       await this.github.setLabels(prNumber, [STATUS_LABELS.review], this.labelsOn(pr));
       const issue = this.issueOfBranch(pr.headRefName);
+      if (this.taskBudgetExceeded(issue)) {
+        const cost = this.taskCostUsd(issue);
+        const reason = `Budget tâche dépassé (${cost.toFixed(2)} $ / ${TASK_BUDGET_USD.toFixed(2)} $)`;
+        await this.github.comment(prNumber, `### Relecture automatique : attention humaine requise\n\n- ${reason}`);
+        await this.github.setLabels(prNumber, [STATUS_LABELS.human], [STATUS_LABELS.review]);
+        this.store.data.reviews[String(prNumber)] = {
+          pr: prNumber,
+          issue,
+          outcome: "human",
+          reviewer: "budget",
+          reasons: [reason],
+          reviewerComments: [],
+          at: new Date().toISOString(),
+          fixRounds,
+        };
+        this.store.log("warn", `PR #${prNumber} non relue : ${reason}`);
+        return;
+      }
       const files = await this.github.pullRequestFiles(prNumber);
       const rawDiff = await this.github.pullRequestDiff(prNumber);
 
@@ -277,13 +316,16 @@ export class Orchestrator {
       await this.github.setLabels(prNumber, [label], [STATUS_LABELS.review]);
       this.store.data.reviews[String(prNumber)] = {
         pr: prNumber,
+        issue,
         outcome: result.outcome,
         reviewer: effectiveReviewerId,
         reasons: result.reasons,
         reviewerComments: result.reviewerComments,
         at: new Date().toISOString(),
         fixRounds,
+        m: result.m,
       };
+      this.refreshCumulCost(issue);
       this.store.log("info", `PR #${prNumber} relue par ${effectiveReviewerId} : ${result.outcome}`);
     } catch (error) {
       this.store.log("error", `Relecture PR #${prNumber} : ${(error as Error).message}`);
@@ -390,6 +432,8 @@ export class Orchestrator {
       logFile: run.logFile,
       timeoutMs: this.config.runTimeoutMinutes * 60_000,
       onLine: (line) => this.store.pushLine(agentId, line),
+      effort: agent.effort ?? "medium",
+      budgetUsd: agent.budgetUsd ?? TASK_BUDGET_USD,
     });
     this.running.set(agentId, { run, handle });
     this.store.data.runs.push(run);
@@ -397,28 +441,46 @@ export class Orchestrator {
       "info",
       `Agent ${agentId} lancé (${kind}) sur #${pr ?? issue}, branche ${branch}`,
     );
-    void handle.done.then(({ code }) => this.finish(run, code));
+    void handle.done.then(({ code, stdout }) => this.finish(run, code, stdout));
   }
 
-  private async finish(run: RunRecord, code: number): Promise<void> {
+  private async finish(run: RunRecord, code: number, stdout = ""): Promise<void> {
     this.running.delete(run.agent);
     run.endedAt = new Date().toISOString();
     run.exitCode = code;
     try {
-      const quotaDelay = quotaResetDelayMs(logTail(run.logFile));
+      const agent = this.requireAgent(run.agent);
+      const settings = this.config.clis[agent.cli];
+      const adapter = adapterFor(settings?.adapter ?? "");
+      run.m = adapter.usage(stdout);
+      const parsedFinal = validateAgentFinalMessage(parseJsonObject(adapter.finalText(stdout)));
+      if (parsedFinal.valid) {
+        run.final = parsedFinal.message;
+      } else if (stdout.trim()) {
+        this.store.log("warn", `Agent ${run.agent} sans JSON final lisible : ${parsedFinal.error}`);
+      }
+
+      const tail = logTail(run.logFile);
+      const quotaDelay = quotaResetDelayMs(tail);
       if (quotaDelay !== undefined) {
+        run.final ??= { v: 1, s: "blocked", e: ["QUOTA"] };
         await this.pauseForQuota(run, quotaDelay);
         return;
+      }
+      const providerError = runErrorCode(code, tail);
+      if (providerError) {
+        run.final ??= { v: 1, s: "blocked", e: [providerError] };
       }
       const pr = await this.github.findPullRequest(run.branch);
       if (run.kind === "task") await this.github.setLabels(run.issue, [], [STATUS_LABELS.running]);
       if (!pr) {
-        run.result = "aucune PR";
+        run.result = run.final?.e?.length ? `aucune PR (${run.final.e.join(", ")})` : "aucune PR";
         if (run.kind === "task") await this.github.setLabels(run.issue, [STATUS_LABELS.blocked]);
         this.store.log(
           "warn",
           `Agent ${run.agent} terminé (code ${code}) sans PR pour #${run.issue}`,
         );
+        this.refreshCumulCost(run.issue);
         return;
       }
       run.result = `PR #${pr.number}`;
@@ -427,6 +489,7 @@ export class Orchestrator {
         if (review) review.fixRounds += 1;
         await this.github.setLabels(pr.number, [], [STATUS_LABELS.running]);
       }
+      this.refreshCumulCost(run.issue);
       this.store.log("info", `Agent ${run.agent} terminé : PR #${pr.number}`);
       await this.refresh();
       // Read-only review starts on its own: it only validates and comments.
@@ -459,6 +522,37 @@ export class Orchestrator {
     const until = this.store.data.quotaUntil?.[agentId];
     if (until && Date.parse(until) > Date.now()) {
       throw new Error(`Quota de l'agent ${agentId} épuisé : relance possible vers ${clock(until)}`);
+    }
+  }
+
+  private assertTaskBudgetAvailable(issue: number | undefined): void {
+    if (!this.taskBudgetExceeded(issue)) return;
+    const cost = this.taskCostUsd(issue);
+    throw new Error(
+      `Budget tâche dépassé (${cost.toFixed(2)} $ / ${TASK_BUDGET_USD.toFixed(2)} $) : attente humaine requise`,
+    );
+  }
+
+  private taskBudgetExceeded(issue: number | undefined): boolean {
+    return issue !== undefined && this.taskCostUsd(issue) >= TASK_BUDGET_USD;
+  }
+
+  private taskCostUsd(issue: number | undefined): number {
+    if (issue === undefined) return 0;
+    const runCost = this.store.data.runs
+      .filter((r) => r.issue === issue)
+      .reduce((sum, r) => sum + (r.m?.totalCostUsd ?? 0), 0);
+    const reviewCost = Object.values(this.store.data.reviews)
+      .filter((r) => r.issue === issue)
+      .reduce((sum, r) => sum + (r.m?.totalCostUsd ?? 0), 0);
+    return runCost + reviewCost;
+  }
+
+  private refreshCumulCost(issue: number | undefined): void {
+    if (issue === undefined) return;
+    const cost = this.taskCostUsd(issue);
+    for (const run of this.store.data.runs) {
+      if (run.issue === issue) run.cumulCostUsd = cost;
     }
   }
 
@@ -550,6 +644,11 @@ export class Orchestrator {
         verified: adapterFor(this.config.clis[r.cli]?.adapter ?? "").verified,
       })),
       defaultReviewer: this.config.defaultReviewer,
+      metrics: {
+        totalCostUsd: data.runs.reduce((sum, r) => sum + (r.m?.totalCostUsd ?? 0), 0) +
+          Object.values(data.reviews).reduce((sum, r) => sum + (r.m?.totalCostUsd ?? 0), 0),
+        taskBudgetUsd: TASK_BUDGET_USD,
+      },
       reviewLines: live.liveLines["review"] ?? [],
       agents,
       prs: live.prs.map((p) => ({
