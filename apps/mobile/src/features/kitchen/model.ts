@@ -1,4 +1,5 @@
 import { formatHHMM, type Database } from "@heute/domain";
+import { applyChangeIndicator, type ChangeIndicator } from "../../lib/query/lastSeen/index.ts";
 
 /**
  * Types de repas du modèle de données (public.meal).
@@ -39,9 +40,20 @@ export interface DietCounts {
 }
 
 /**
+ * Ancienne valeur d'un total de repas modifié (VG-05 / tokens.md §4.4).
+ */
+export interface MealTotalPrevious {
+  total?: number;
+  veg?: number;
+  vegan?: number;
+  mos?: number;
+  al?: number;
+}
+
+/**
  * Total d'un repas pour la journée, incluant les régimes.
  */
-export interface MealTotal extends DietCounts {
+export interface MealTotal extends DietCounts, ChangeIndicator<MealTotalPrevious> {
   meal: MealType;
   total: number;
 }
@@ -52,11 +64,18 @@ export interface MealTotal extends DietCounts {
 export type KitchenTotals = Record<MealType, MealTotal>;
 
 /**
+ * Ancienne valeur d'un repas de groupe modifié.
+ */
+export interface KitchenGroupMealPrevious extends Partial<DietCounts> {
+  count?: number;
+}
+
+/**
  * Repas individuel au sein d'une réservation / groupe.
  * Si une heure spécifique est requise (ex. grill), elle est stockée en minutes depuis minuit.
  * note et allergies sont stockés au niveau du repas conformément au schéma public.meal_counts.
  */
-export interface KitchenGroupMeal extends DietCounts {
+export interface KitchenGroupMeal extends DietCounts, ChangeIndicator<KitchenGroupMealPrevious> {
   meal: MealType;
   count: number;
   time?: number | null;
@@ -74,9 +93,18 @@ export interface KitchenGroupDetail {
 }
 
 /**
+ * Ancienne valeur d'un plat de menu modifié (VG-05 / tokens.md §4.4).
+ */
+export interface MenuItemPrevious {
+  mainDish?: string;
+  vegVariant?: string | null;
+  dessert?: string | null;
+}
+
+/**
  * Plat ou composante du menu du jour (Speiseplan).
  */
-export interface MenuItem {
+export interface MenuItem extends ChangeIndicator<MenuItemPrevious> {
   meal: "mittag" | "abend";
   mainDish: string;
   vegVariant: string | null;
@@ -192,8 +220,21 @@ function createKitchenDay(params: {
   noLunch?: boolean;
   noDinner?: boolean;
   updatedAt?: string;
+  totalsChanges?: Partial<Record<MealType, { updated_at?: string; previous?: MealTotalPrevious }>>;
 }): KitchenDay {
   const totals = calculateKitchenTotals(params.groups);
+
+  if (params.totalsChanges) {
+    for (const [meal, change] of Object.entries(params.totalsChanges) as [
+      MealType,
+      { updated_at?: string; previous?: MealTotalPrevious },
+    ][]) {
+      if (totals[meal] && change) {
+        totals[meal].updated_at = change.updated_at;
+        totals[meal].previous = change.previous;
+      }
+    }
+  }
 
   const noLunch = params.noLunch ?? totals.mittag.total === 0;
   const noDinner = params.noDinner ?? (totals.abend.total === 0 && totals.grill.total === 0);
@@ -206,6 +247,37 @@ function createKitchenDay(params: {
     noLunch,
     noDinner,
     updatedAt: params.updatedAt,
+  };
+}
+
+/**
+ * Applique l'indicateur changed: true et previous sur les éléments de KitchenDay
+ * selon la dernière consultation (lastSeen).
+ * Règle d'acceptation 3 : première ouverture (lastSeen null) -> rien n'est marqué.
+ * Règle d'acceptation 2 : updated_at > lastSeen -> changed: true et previous (ancienne valeur).
+ */
+export function applyKitchenDayChanges(day: KitchenDay, lastSeen?: string | null): KitchenDay {
+  const markMealTotal = (m: MealTotal): MealTotal => applyChangeIndicator(m, lastSeen);
+  const markMenuItem = (item: MenuItem | null): MenuItem | null =>
+    item ? applyChangeIndicator(item, lastSeen) : null;
+
+  return {
+    ...day,
+    totals: {
+      frueh: markMealTotal(day.totals.frueh),
+      mittag: markMealTotal(day.totals.mittag),
+      abend: markMealTotal(day.totals.abend),
+      lunchpaket: markMealTotal(day.totals.lunchpaket),
+      grill: markMealTotal(day.totals.grill),
+    },
+    menu: {
+      mittag: markMenuItem(day.menu.mittag),
+      abend: markMenuItem(day.menu.abend),
+    },
+    groups: day.groups.map((g) => ({
+      ...g,
+      meals: g.meals.map((m) => applyChangeIndicator(m, lastSeen)),
+    })),
   };
 }
 
@@ -327,6 +399,12 @@ export const KITCHEN_FIXTURE_MENU: KitchenDayMenu = {
     mainDish: "Zitronenhähnchen mit Kartoffeln",
     vegVariant: "Gemüsebratling",
     dessert: "Grießbrei",
+    updated_at: "2026-09-30T12:05:00Z", // 14:05 Europe/Berlin
+    previous: {
+      mainDish: "Hähnchenschenkel",
+      vegVariant: "Gemüsespieß",
+      dessert: "Grießbrei",
+    },
   },
 };
 
@@ -337,6 +415,14 @@ export const kitchenDayFixture: KitchenDay = createKitchenDay({
   noLunch: false,
   noDinner: false,
   updatedAt: "14:32",
+  totalsChanges: {
+    abend: {
+      updated_at: "2026-09-30T12:05:00Z", // 14:05 Europe/Berlin
+      previous: {
+        total: 13,
+      },
+    },
+  },
 });
 
 /**

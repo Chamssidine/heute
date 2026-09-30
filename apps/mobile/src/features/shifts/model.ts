@@ -7,6 +7,8 @@ import {
   type ShiftType,
 } from "@heute/domain";
 
+import { isItemChanged, type ChangeIndicator } from "../../lib/query/lastSeen/index.ts";
+
 /**
  * Libellés allemands pour chaque type de service selon docs/design/copy.md §7.1.
  */
@@ -32,10 +34,21 @@ export const SHIFT_BADGE_LABELS: Record<ShiftType, string> = {
 };
 
 /**
+ * Ancienne valeur d'un service modifié (VG-05 / tokens.md §4.4).
+ */
+export interface ShiftDayPrevious {
+  type?: ShiftType;
+  label?: string;
+  badgeLabel?: string;
+  hours?: string;
+  istMinutes?: number;
+}
+
+/**
  * Représentation d'une journée de service dans la vue « Mein Dienstplan ».
  * Contrat exposé à l'interface (Agent U).
  */
-export interface ShiftDay {
+export interface ShiftDay extends ChangeIndicator<ShiftDayPrevious> {
   date: string;
   type: ShiftType;
   label: string;
@@ -54,6 +67,16 @@ export interface MyShiftsView {
   ist: number;
   soll: number;
   diff: number;
+  updated_at?: string;
+}
+
+/**
+ * Données d'entrée d'un service enrichies d'historique éventuel.
+ */
+export interface ShiftInputWithHistory extends ShiftInput {
+  updated_at?: string;
+  changed?: boolean;
+  previous?: ShiftDayPrevious;
 }
 
 /**
@@ -80,7 +103,7 @@ export function formatShiftHours(shift: ShiftInput): string {
 /**
  * Transforme une entrée de service en ShiftDay typé pour l'interface.
  */
-export function toShiftDay(shift: ShiftInput): ShiftDay {
+export function toShiftDay(shift: ShiftInputWithHistory, lastSeen?: string | null): ShiftDay {
   if (!shift.date) {
     throw new Error("ShiftDay requires a valid date (YYYY-MM-DD)");
   }
@@ -88,6 +111,9 @@ export function toShiftDay(shift: ShiftInput): ShiftDay {
   const isSunday = typeof shift.isSunday === "boolean" ? shift.isSunday : isSundayDate(shift.date);
 
   const istMinutes = workedMinutes(shift);
+
+  const isChanged =
+    lastSeen !== undefined ? isItemChanged(shift.updated_at, lastSeen) : (shift.changed ?? false);
 
   return {
     date: shift.date,
@@ -97,6 +123,50 @@ export function toShiftDay(shift: ShiftInput): ShiftDay {
     hours: formatShiftHours(shift),
     isSunday,
     istMinutes,
+    updated_at: shift.updated_at,
+    changed: isChanged,
+    previous: shift.previous,
+  };
+}
+
+/**
+ * Applique l'indicateur de changement sur un ShiftDay par rapport à lastSeen.
+ */
+export function applyShiftChanges(day: ShiftDay, lastSeen?: string | null): ShiftDay {
+  if (!lastSeen || !day.updated_at) {
+    return {
+      ...day,
+      changed: false,
+      previous: undefined,
+    };
+  }
+
+  const changed = isItemChanged(day.updated_at, lastSeen);
+  return {
+    ...day,
+    changed,
+    previous: changed ? day.previous : undefined,
+  };
+}
+
+/**
+ * Applique les indicateurs de changement sur l'ensemble d'un MyShiftsView.
+ */
+export function applyMyShiftsChanges(view: MyShiftsView, lastSeen?: string | null): MyShiftsView {
+  if (!lastSeen) {
+    return {
+      ...view,
+      days: view.days.map((d) => ({
+        ...d,
+        changed: false,
+        previous: undefined,
+      })),
+    };
+  }
+
+  return {
+    ...view,
+    days: view.days.map((d) => applyShiftChanges(d, lastSeen)),
   };
 }
 
@@ -105,11 +175,12 @@ export function toShiftDay(shift: ShiftInput): ShiftDay {
  */
 export function createMyShiftsView(
   month: string,
-  shifts: readonly ShiftInput[],
+  shifts: readonly ShiftInputWithHistory[],
   sollMinutes = 174 * 60,
+  lastSeen?: string | null,
 ): MyShiftsView {
   const balance = monthBalance(shifts, sollMinutes);
-  const days = shifts.map(toShiftDay);
+  const days = shifts.map((s) => toShiftDay(s, lastSeen));
 
   return {
     month,
@@ -125,7 +196,7 @@ export function createMyShiftsView(
  * Comprend : Dienst normal, TD, SEM, Urlaub, Krank, Frei et des dimanches travaillés.
  * Total attendu : IST 184:00 (11 040 min), Soll 174:00 (10 440 min), Diff +10:00 (600 min).
  */
-export const OCTOBER_2026_SHIFTS: readonly ShiftInput[] = [
+export const OCTOBER_2026_SHIFTS: readonly ShiftInputWithHistory[] = [
   { date: "2026-10-01", type: "normal", start1: 360, end1: 870, break_min: 30 },
   { date: "2026-10-02", type: "normal", start1: 360, end1: 870, break_min: 30 },
   { date: "2026-10-03", type: "frei" },
@@ -147,7 +218,19 @@ export const OCTOBER_2026_SHIFTS: readonly ShiftInput[] = [
   { date: "2026-10-11", type: "frei" },
   { date: "2026-10-12", type: "krank" },
   { date: "2026-10-13", type: "normal", start1: 480, end1: 990, break_min: 30 },
-  { date: "2026-10-14", type: "normal", start1: 480, end1: 990, break_min: 30 },
+  {
+    date: "2026-10-14",
+    type: "normal",
+    start1: 480,
+    end1: 990,
+    break_min: 30,
+    updated_at: "2026-10-01T14:05:00Z",
+    previous: {
+      hours: "08:00–16:00",
+      label: "Dienst",
+      istMinutes: 450,
+    },
+  },
   { date: "2026-10-15", type: "normal", start1: 480, end1: 990, break_min: 30 },
   { date: "2026-10-16", type: "normal", start1: 480, end1: 990, break_min: 30 },
   { date: "2026-10-17", type: "frei" },
