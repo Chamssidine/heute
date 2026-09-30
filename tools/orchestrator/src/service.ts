@@ -42,6 +42,7 @@ function filterDiff(rawDiff: string): string {
   return result.join("\n");
 }
 import {
+  decideReview,
   failureStreak,
   isManualRunDone,
   needsReview,
@@ -53,18 +54,23 @@ import {
   type ErrorCode,
 } from "./decisions.ts";
 import type { GitHub, PullRequest } from "./github.ts";
-import { fixPrompt, taskPrompt } from "./prompts.ts";
-import { reviewComment, reviewPullRequest } from "./review.ts";
+import { fixPrompt, localFixPrompt, taskPrompt } from "./prompts.ts";
+import { reviewComment, reviewPullRequest, runValidations } from "./review.ts";
 import { startResumableRun, type RunHandle } from "./runner.ts";
 import type { RunKind, RunRecord, Store } from "./store.ts";
 import { validateAgentFinalMessage } from "./schemas.ts";
 import {
   aheadCount,
+  changedFiles,
+  checkoutLocalBranch,
+  commitsAhead,
   deleteLocalBranch,
   ensureWorktree,
   fastForwardInto,
   fetchOrigin,
+  localBranchExists,
   prepareWorktree,
+  pushBranch,
   remoteBranchExists,
   syncWithBase,
 } from "./worktree.ts";
@@ -75,6 +81,8 @@ const CONFLICT_REASON = "Conflit de fusion avec la branche de base";
 // Automatic corrections stop here whatever the reviews say: a human looks at it.
 const MAX_AUTO_FIX_ROUNDS = 4;
 const MAX_REVIEW_ATTEMPTS = 3;
+// Corrections done locally, on the agent's own commits, before anything is pushed.
+const MAX_LOCAL_FIX_ROUNDS = 2;
 const RELEASE_CHECK_MS = 5 * 60_000;
 const TASK_BUDGET_USD = 1.5;
 const BUDGET_ERROR = /budget (?:exceeded|reached)|max(?:imum)? budget|BUDGET_EXCEEDED/i;
@@ -194,14 +202,20 @@ export class Orchestrator {
       const branch = `${agent.branchPrefix}/i${issue.number}`;
       const base = baseBranch(this.config);
       await ensureWorktree(this.repoDir, agent.worktree);
-      // Resume the pushed work of an interrupted run instead of starting over.
-      const resume = await remoteBranchExists(agent.worktree, branch);
-      if (resume) {
+      // Resume an interrupted run instead of starting over: from its pushed branch, or from
+      // its local one (agents no longer push, so that is the usual case).
+      const pushed = await remoteBranchExists(agent.worktree, branch);
+      const local = !pushed && (await localBranchExists(agent.worktree, branch));
+      const resume = pushed || local;
+      if (pushed) {
         await prepareWorktree(agent.worktree, { branch });
+      } else if (local) {
+        await checkoutLocalBranch(agent.worktree, branch);
       } else {
         await prepareWorktree(agent.worktree, { detach: base });
         await deleteLocalBranch(agent.worktree, branch);
       }
+      const issueText = await this.github.issueText(issue.number);
       await this.github.setLabels(issue.number, [STATUS_LABELS.running]);
       this.start(
         agentId,
@@ -209,7 +223,7 @@ export class Orchestrator {
         issue.number,
         undefined,
         branch,
-        taskPrompt(agentId, agent, issue.number, branch, resume, base),
+        taskPrompt(agentId, agent, issue.number, branch, resume, base, issueText),
       );
     } finally {
       this.launching.delete(agentId);
@@ -675,6 +689,7 @@ export class Orchestrator {
     branch: string,
     prompt: string,
     startSha?: string,
+    localRound = 0,
   ): void {
     const agent = this.requireAgent(agentId);
     const settings = this.config.clis[agent.cli];
@@ -690,6 +705,7 @@ export class Orchestrator {
       branch,
       startedAt: new Date().toISOString(),
       logFile: join(this.store.logsDir, `${id}.log`),
+      localRound,
     };
     this.store.live.liveLines[agentId] = [];
 
@@ -757,6 +773,10 @@ export class Orchestrator {
       if (providerError) {
         run.final ??= { v: 1, s: "blocked", e: [providerError] };
       }
+      if (!run.manual) {
+        await this.finishLocal(run, code, adapter.finalText(stdout));
+        return;
+      }
       const pr = await this.github.findPullRequest(run.branch);
       if (run.kind === "task") await this.github.setLabels(run.issue, [], [STATUS_LABELS.running]);
       if (!pr) {
@@ -785,6 +805,112 @@ export class Orchestrator {
     } finally {
       this.store.save();
     }
+  }
+
+  // Agents deliver locally: the orchestrator re-runs the checks on their commits and only then
+  // pushes and opens the PR. A failing check is fixed in the same folder, before GitHub is
+  // involved, so a failure never costs a PR round trip.
+  private async finishLocal(
+    run: RunRecord,
+    code: number,
+    answer: string | undefined,
+  ): Promise<void> {
+    const agent = this.requireAgent(run.agent);
+    const base = baseBranch(this.config);
+    const dir = agent.worktree;
+    const isFix = run.kind === "fix";
+    const ahead = await commitsAhead(dir, `origin/${isFix ? run.branch : base}`);
+    if (ahead === 0) {
+      await this.giveUp(
+        run,
+        isFix ? "aucun changement" : "aucune PR",
+        answer ?? "L'agent n'a rien produit.",
+      );
+      this.store.log(
+        "warn",
+        `Agent ${run.agent} terminé (code ${code}) sans commit pour #${run.issue}`,
+      );
+      return;
+    }
+    const files = await changedFiles(dir, base);
+    const perimeter = decideReview({
+      files,
+      allowedPaths: agent.allowedPaths,
+      contractPaths: this.config.contractPaths,
+      validationsPassed: true,
+      reviewerApproved: true,
+      fixRoundsDone: 0,
+      maxFixRounds: 99,
+    });
+    const problems = perimeter.outcome === "changes" ? [...perimeter.reasons] : [];
+    const validations = await runValidations(dir);
+    if (!validations.ok) problems.push(validations.log.slice(-1800));
+
+    if (problems.length > 0) {
+      const round = (run.localRound ?? 0) + 1;
+      const hardStop = run.final?.e?.some((e) => e === "TIMEOUT" || e === "BUDGET_EXCEEDED");
+      if (round <= MAX_LOCAL_FIX_ROUNDS && !hardStop && !this.taskBudgetExceeded(run.issue)) {
+        this.store.log(
+          "info",
+          `Agent ${run.agent} : vérifications en échec sur #${run.issue}, correction locale ${round}/${MAX_LOCAL_FIX_ROUNDS}`,
+        );
+        this.start(
+          run.agent,
+          run.kind,
+          run.issue,
+          run.pr,
+          run.branch,
+          localFixPrompt(run.agent, agent, run.issue, run.branch, problems.join("\n"), round),
+          undefined,
+          round,
+        );
+        return;
+      }
+      await this.giveUp(run, "aucune PR (vérifications en échec)", problems.join("\n"));
+      return;
+    }
+
+    await pushBranch(dir, run.branch);
+    let pr = await this.github.findPullRequest(run.branch);
+    if (!pr) {
+      const title = this.store.live.issues.find((i) => i.number === run.issue)?.title ?? run.branch;
+      await this.github.createPullRequest(
+        base,
+        run.branch,
+        title,
+        `Closes #${run.issue}\n\nFichiers modifiés (${files.length}) :\n${files.map((f) => `- ${f}`).join("\n")}\n\n` +
+          `Vérifications de l'orchestrateur, avant envoi :\n\`\`\`\n${validations.log.trim()}\n\`\`\`\n\n` +
+          `Réponse de l'agent : ${(answer ?? "").slice(0, 1500)}`,
+      );
+      await this.refresh();
+      pr = await this.github.findPullRequest(run.branch);
+    }
+    if (!pr) throw new Error(`PR introuvable après l'envoi de ${run.branch}`);
+    run.result = `PR #${pr.number}`;
+    if (run.kind === "task") await this.github.setLabels(run.issue, [], [STATUS_LABELS.running]);
+    if (isFix) {
+      const review = this.store.data.reviews[String(pr.number)];
+      if (review) review.fixRounds += 1;
+      await this.github.setLabels(pr.number, [], [STATUS_LABELS.running]);
+    }
+    this.refreshCumulCost(run.issue);
+    this.store.log("info", `Agent ${run.agent} terminé : PR #${pr.number} (vérifiée avant envoi)`);
+    await this.refresh();
+    await this.review(pr.number, this.config.defaultReviewer);
+  }
+
+  // Nothing is pushed: the reason goes on the issue (or the PR) and the task waits for a human.
+  private async giveUp(run: RunRecord, result: string, why: string): Promise<void> {
+    run.result = run.final?.e?.length ? `${result} (${run.final.e.join(", ")})` : result;
+    const text = `### L'agent ${run.agent} n'a pas pu livrer\n\n${why.slice(0, 1800)}`;
+    if (run.kind === "fix" && run.pr !== undefined) {
+      await this.github.comment(run.pr, text);
+      await this.github.setLabels(run.pr, [STATUS_LABELS.human], [STATUS_LABELS.running]);
+    } else {
+      await this.github.comment(run.issue, text);
+      await this.github.setLabels(run.issue, [STATUS_LABELS.blocked], [STATUS_LABELS.running]);
+    }
+    this.refreshCumulCost(run.issue);
   }
 
   // A run stopped by the LLM provider's quota is not a failed task: release it (no « bloquée »,

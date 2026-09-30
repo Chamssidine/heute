@@ -116,3 +116,30 @@ export async function aheadCount(dir: string, base: string, head: string): Promi
 export async function fetchOrigin(dir: string): Promise<void> {
   await git(dir, ["fetch", "--prune", "origin"]);
 }
+
+export async function localBranchExists(dir: string, branch: string): Promise<boolean> {
+  const r = await gitOutput(dir, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]);
+  return r.code === 0;
+}
+
+// Resumes an interrupted run's local branch as it is: commits and uncommitted work are kept.
+export async function checkoutLocalBranch(dir: string, branch: string): Promise<void> {
+  await git(dir, ["checkout", branch]);
+}
+
+// Commits on HEAD that `ref` does not have (what the agent produced and nobody has pushed).
+export async function commitsAhead(dir: string, ref: string): Promise<number> {
+  const r = await gitOutput(dir, ["rev-list", "--count", `${ref}..HEAD`]);
+  if (r.code !== 0) throw new Error(`git rev-list (${dir}) : ${r.out}`);
+  return Number(r.out);
+}
+
+export async function changedFiles(dir: string, base: string): Promise<string[]> {
+  const r = await gitOutput(dir, ["diff", "--name-only", `origin/${base}...HEAD`]);
+  if (r.code !== 0) throw new Error(`git diff (${dir}) : ${r.out}`);
+  return r.out === "" ? [] : r.out.split(/\r?\n/);
+}
+
+export async function pushBranch(dir: string, branch: string): Promise<void> {
+  await git(dir, ["push", "-u", "origin", branch]);
+}

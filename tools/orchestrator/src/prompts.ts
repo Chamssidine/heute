@@ -1,17 +1,22 @@
 import type { AgentConfig } from "./config.ts";
 
+// Agents have no GitHub access at all: the orchestrator gives them the issue text, and pushes
+// and opens the PR itself once its own checks pass. A failed check never costs a PR round trip.
 const AUTONOMY = `Tu travailles sans humain : ne pose aucune question et n'attends aucune réponse.
-En cas d'ambiguïté, choisis l'option la plus simple conforme aux règles, et note-la dans la PR.
+En cas d'ambiguïté, choisis l'option la plus simple conforme aux règles, et note-la dans ta réponse finale.
+Tu n'as accès ni à GitHub, ni au réseau : ne lance ni \`gh\`, ni \`git push\`, ni \`git fetch\`.
 Seules ces commandes shell sont autorisées, toute autre est refusée (même node -v ou npm -v) :
-git, npm run typecheck|lint|test|format, npm test, npm install, npm ci,
-npx prettier|eslint|tsc|expo, gh issue view|comment, gh pr create|view|diff|comment|list.
+git status|diff|log|show|add|rm|mv|commit|switch|checkout|restore|rev-parse|branch|stash,
+npm run typecheck|lint|test|format, npm test, npm install, npm ci, npx prettier|eslint|tsc|expo.
 Lance une seule commande à la fois, sans ; && | ni redirection : les enchaînements sont refusés.
-Appelle \`gh\` par son nom, sans chemin complet. Si une commande est refusée, n'essaie pas de la
-contourner : note-la dans la PR (ou dans l'issue si tu ne peux pas ouvrir de PR).
+Si une commande est refusée, n'essaie pas de la contourner : mentionne-la dans ta réponse finale.
 Pour explorer le code, utilise tes outils de fichiers (lister un dossier, chercher, lire un fichier),
 jamais une commande shell (ls, dir, Get-ChildItem, cat, Get-Content, findstr) : elles sont refusées
 et un refus peut arrêter ton travail.
 Pour supprimer ou déplacer un fichier suivi : \`git rm\` ou \`git mv\`. N'utilise jamais \`git reset\`.`;
+
+const FINAL = `Termine par UNE ligne JSON, sans rien après :
+{"v":1, "id": <issue>, "s": "ok"|"fail"|"blocked", "e": [codes d'erreur si s != "ok"], "val": {"tc": true|false, "li": true|false, "te": true|false}}`;
 
 export function taskPrompt(
   id: string,
@@ -20,34 +25,32 @@ export function taskPrompt(
   branch: string,
   resume = false,
   base = "main",
+  issueText = "",
 ): string {
   const start = resume
-    ? `La branche ${branch} est déjà extraite : elle contient le travail poussé par un run précédent
-qui a été interrompu. Commence par \`git log --oneline origin/${base}..HEAD\` et
-\`git diff --stat origin/${base}\`, puis reprends là où il s'est arrêté, sans refaire ce qui est fait.`
+    ? `La branche ${branch} est déjà extraite : elle contient le travail d'un run précédent interrompu.
+Commence par \`git log --oneline origin/${base}..HEAD\` et \`git status\`, puis reprends là où il s'est arrêté,
+sans refaire ce qui est fait.`
     : `origin/${base} est déjà extrait, arbre propre. Crée ta branche : \`git switch -c ${branch}\`.`;
   return `Tu es l'agent ${id} (${agent.name}) du projet Heute.
 ${AUTONOMY}
 
 Dossier de travail : ${agent.worktree}.
 Règles : AGENTS.md et ${agent.brief}. Lis-les d'abord.
-Tâche : issue #${issue}. Lis-la avec \`gh issue view ${issue}\`.
+
+Tâche : issue #${issue}. Son texte complet :
+<<<
+${issueText.trim() || "(texte indisponible : lis les critères dans le brief)"}
+>>>
 
 Étapes :
 1. ${start}
-2. Réalise l'issue, uniquement dans tes chemins autorisés. Après chaque étape qui compile,
-   commite et pousse (\`git push -u origin ${branch}\`) : si tu es interrompu, ton travail est repris.
-3. Lance les validations demandées par l'issue.
-4. \`git push -u origin ${branch}\`, puis \`gh pr create --base ${base} --head ${branch}\`
-   avec un titre « <ID>: … » et un corps qui commence par « Closes #${issue} »,
-   suivi des fichiers modifiés et de la sortie des validations.
-5. Terminer UNIQUEMENT par un JSON (sur une seule ligne ou non) :
-   {"v":1, "id": ${issue}, "s": "ok"|"fail"|"blocked", "pr": <numéro PR si créée>, "e": [codes d'erreur si s!="ok"], "val": {"tc": true, "li": true, "te": true}}
-   Exemple : {"v":1, "id": ${issue}, "s": "ok", "pr": 123, "val": {"tc": true, "li": true, "te": true}}
-6. Arrête-toi. Ne merge jamais.
+2. Réalise l'issue, uniquement dans tes chemins autorisés. Commite après chaque étape qui compile.
+3. Lance les validations demandées (typecheck, lint, tests) et corrige jusqu'à ce qu'elles passent toutes.
+4. Commite le tout. Ne pousse pas et n'ouvre pas de PR : l'orchestrateur revalide, pousse et ouvre la PR.
+5. ${FINAL}
 
-Si l'issue est impossible ou contradictoire : \`gh issue comment ${issue}\` avec la raison,
-puis arrête-toi sans ouvrir de PR.`;
+Si l'issue est impossible ou contradictoire : explique pourquoi en une phrase avant le JSON, avec "s":"blocked".`;
 }
 
 export function fixPrompt(
@@ -70,12 +73,34 @@ ${feedback}
 
 Étapes :
 1. Corrige, uniquement dans tes chemins autorisés. Si un fichier hors périmètre a été modifié, annule ce changement.
-   Si un conflit de fusion avec ${base} est signalé, résous-le : \`git status\`, édite les fichiers (supprime les marqueurs de conflit), \`git add\`, \`git commit\`.
-2. Relance les validations de l'issue.
-3. \`git push\`, puis \`gh pr comment ${pr}\` avec ce que tu as corrigé et la sortie des validations.
-4. Terminer UNIQUEMENT par un JSON :
-   {"v":1, "id": ${issue}, "s": "ok"|"fail"|"blocked", "pr": ${pr}, "e": [codes d'erreur si s!="ok"], "val": {"tc": true|false, "li": true|false, "te": true|false}}
-5. Arrête-toi. Ne merge jamais.`;
+   Si un conflit de fusion avec ${base} est signalé, résous-le : \`git status\`, édite les fichiers
+   (supprime les marqueurs de conflit), \`git add\`, \`git commit\`.
+2. Relance les validations (typecheck, lint, tests) jusqu'à ce qu'elles passent.
+3. Commite. Ne pousse pas : l'orchestrateur revalide et pousse.
+4. ${FINAL}`;
+}
+
+// The orchestrator's own checks failed on the agent's commits: same branch, same folder,
+// with the exact output, before anything reaches GitHub.
+export function localFixPrompt(
+  id: string,
+  agent: AgentConfig,
+  issue: number,
+  branch: string,
+  problems: string,
+  round: number,
+): string {
+  return `Tu es l'agent ${id} (${agent.name}) du projet Heute.
+${AUTONOMY}
+
+Dossier de travail : ${agent.worktree}. Ta branche ${branch} est déjà extraite (issue #${issue}).
+Règles : AGENTS.md et ${agent.brief}.
+
+Les vérifications de l'orchestrateur échouent sur ton travail (tentative ${round}) :
+${problems}
+
+Corrige uniquement cela, relance les validations concernées, puis commite. Ne pousse pas.
+${FINAL}`;
 }
 
 export function reviewPrompt(pr: number, diffFile: string, issueFile: string | undefined): string {

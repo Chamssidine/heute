@@ -27,6 +27,8 @@ export interface RunRecord {
   prompt?: string;
   worktree?: string;
   startSha?: string;
+  // Local correction round after the orchestrator's own checks failed (0 = the first run).
+  localRound?: number;
   // Usage metrics (tokens, cost) from the LLM run.
   m?: UsageMetrics;
   // Cumul USD dépensés sur cette tâche (toutes les runs + réparations).
