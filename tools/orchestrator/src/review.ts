@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { adapterFor } from "./adapters/index.ts";
 import type { Config } from "./config.ts";
-import { decideReview, type ReviewDecision } from "./decisions.ts";
+import { decideReview, quotaResetDelayMs, type ReviewDecision } from "./decisions.ts";
 import { exec } from "./exec.ts";
 import { reviewPrompt } from "./prompts.ts";
 import { startResumableRun } from "./runner.ts";
@@ -138,6 +138,9 @@ export async function reviewPullRequest(req: ReviewRequest): Promise<ReviewResul
     budgetUsd: reviewer.budgetUsd ?? 0.5,
   });
   const { code, stdout } = await run.done;
+  const quota = quotaResetDelayMs(stdout);
+  // Not a verdict: the reviewer's provider refused to answer. The caller waits and retries.
+  if (quota !== undefined) throw new Error(`QUOTA_REVIEW:${quota}`);
   const usage = adapter.usage(stdout);
   const verdict = code === 0 ? parseVerdict(adapter.finalText(stdout)) : undefined;
   if (!verdict) {

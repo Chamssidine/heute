@@ -476,7 +476,16 @@ export class Orchestrator {
       );
     } catch (error) {
       this.store.log("error", `Relecture PR #${prNumber} : ${(error as Error).message}`);
-      await this.giveUpOrRetryReview(prNumber, pr).catch(() => undefined);
+      const quota = /QUOTA_REVIEW:(\d+)/.exec((error as Error).message);
+      if (quota?.[1]) {
+        // No verdict was given: wait for the reset instead of sending everything to the human.
+        (this.store.data.quotaUntil ??= {})["review"] = new Date(
+          Date.now() + Number(quota[1]),
+        ).toISOString();
+        await this.github.setLabels(prNumber, [], [STATUS_LABELS.review]).catch(() => undefined);
+      } else {
+        await this.giveUpOrRetryReview(prNumber, pr).catch(() => undefined);
+      }
     } finally {
       this.reviewing = undefined;
       this.store.setActivity(undefined);
@@ -595,7 +604,8 @@ export class Orchestrator {
       }
       const agentPrs = this.store.live.prs.filter((p) => agentOfBranch(this.config, p.headRefName));
 
-      for (const pr of agentPrs.filter((p) => needsReview(p.labels))) {
+      const reviewPaused = activeQuota(this.store.data.quotaUntil?.["review"]);
+      for (const pr of reviewPaused ? [] : agentPrs.filter((p) => needsReview(p.labels))) {
         this.review(pr.number, this.config.defaultReviewer).catch((e: Error) =>
           this.store.log("error", `Relecture PR #${pr.number} : ${e.message}`),
         );
