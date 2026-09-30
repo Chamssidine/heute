@@ -7,6 +7,7 @@ import { decideReview, type ReviewDecision } from "./decisions.ts";
 import { exec } from "./exec.ts";
 import { reviewPrompt } from "./prompts.ts";
 import { startResumableRun } from "./runner.ts";
+import { validateReviewerResponse } from "./schemas.ts";
 import { prepareWorktree } from "./worktree.ts";
 
 export interface ReviewResult extends ReviewDecision {
@@ -53,12 +54,10 @@ function parseVerdict(
   const json = text?.match(/\{[\s\S]*\}/)?.[0];
   if (!json) return undefined;
   try {
-    const parsed = JSON.parse(json) as { approve?: unknown; comments?: unknown };
-    if (typeof parsed.approve !== "boolean") return undefined;
-    return {
-      approve: parsed.approve,
-      comments: Array.isArray(parsed.comments) ? parsed.comments.map(String) : [],
-    };
+    const parsed = JSON.parse(json);
+    const result = validateReviewerResponse(parsed);
+    if (!result.valid) return undefined;
+    return { approve: result.approve!, comments: result.comments! };
   } catch {
     return undefined;
   }
