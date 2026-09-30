@@ -60,6 +60,7 @@ import { buildAgent, type AgentSpec } from "./agents.ts";
 import type { Forge } from "./forge.ts";
 import type { PullRequest } from "./github.ts";
 import { LocalForge } from "./localForge.ts";
+import { exec } from "./exec.ts";
 import { fixPrompt, localFixPrompt, taskPrompt } from "./prompts.ts";
 import { reviewComment, reviewPullRequest, runValidations } from "./review.ts";
 import { startResumableRun, type RunHandle } from "./runner.ts";
@@ -148,6 +149,27 @@ export class Orchestrator {
   private readonly reviewQueue: { pr: number; reviewer: string }[] = [];
   private readonly interrupted: RunRecord[] = [];
   private ticking = false;
+  // Live proof of life of a running agent: tool steps so far, files changed, commits made.
+  private readonly steps = new Map<string, number>();
+  private readonly work = new Map<string, { changed: number; commits: number }>();
+  // Called every few seconds: what each running agent has really produced in its folder.
+  async refreshWork(): Promise<void> {
+    for (const [id, { run }] of this.running) {
+      if (run.manual) continue;
+      const agent = this.config.agents[id];
+      if (!agent) continue;
+      try {
+        const status = await exec("git", ["status", "--porcelain"], { cwd: agent.worktree, timeoutMs: 20_000 });
+        const changed = status.stdout.split(/\r?\n/).filter(Boolean).length;
+        const commits = await commitsAhead(agent.worktree, run.kind === "fix" ? (run.startSha ?? this.headRef(run.branch)) : this.baseRef());
+        this.work.set(id, { changed, commits });
+      } catch {
+        // The folder is being prepared or reset: try again next time.
+      }
+    }
+    this.store.emit("change");
+  }
+
   // What the orchestrator itself is doing right now (not the agents): shown in the status bar.
   private readonly activities = new Map<string, { text: string; since: string }>();
   nextTickAt: string | undefined;
@@ -1052,6 +1074,8 @@ export class Orchestrator {
       localRound,
     };
     this.store.live.liveLines[agentId] = [];
+    this.steps.set(agentId, 0);
+    this.work.delete(agentId);
 
     if (adapter.mode === "manual") {
       Object.assign(run, { manual: true, prompt, worktree: agent.worktree, startSha });
@@ -1077,7 +1101,10 @@ export class Orchestrator {
       cwd: agent.worktree,
       logFile: run.logFile,
       timeoutMs: this.config.runTimeoutMinutes * 60_000,
-      onLine: (line) => this.store.pushLine(agentId, line),
+      onLine: (line) => {
+        this.steps.set(agentId, (this.steps.get(agentId) ?? 0) + 1);
+        this.store.pushLine(agentId, line);
+      },
       effort: agent.effort ?? "medium",
       budgetUsd: agent.budgetUsd ?? TASK_BUDGET_USD,
     });
@@ -1442,6 +1469,7 @@ export class Orchestrator {
         quotaUntil: activeQuota(this.store.data.quotaUntil?.[id]),
         run: current?.run,
         lines: live.liveLines[id] ?? [],
+        work: current ? { steps: this.steps.get(id) ?? 0, ...(this.work.get(id) ?? { changed: 0, commits: 0 }) } : undefined,
         queue: queueFor(a.label, live.issues, this.issuesWithOpenPr()).map((q) => ({
           number: q.issue.number,
           title: q.issue.title,
