@@ -16,6 +16,9 @@ const stateDir = process.env["STATE_DIR"] ?? fileURLToPath(new URL("../.state", 
 const store = new Store(stateDir);
 // Agents created from the dashboard live in the state and join the ones of config.json.
 Object.assign(config.agents, store.data.customAgents ?? {});
+for (const [id, agent] of Object.entries(store.data.agentOverrides ?? {})) {
+  if (config.agents[id]) config.agents[id] = agent;
+}
 const github = new GitHub(config.gh, config.repo);
 const repoDir = fileURLToPath(new URL("../../..", import.meta.url));
 // Local mode: tasks and PRs live in .state/local.json and in git branches of this repository.

@@ -79,3 +79,21 @@ test("agent creation: the model must be one the CLI offers", () => {
     "no list known: nothing to check against",
   );
 });
+
+test("agent edit: an agent keeps its own label, prefix and folder (it is not compared with itself)", () => {
+  const others = {};
+  const built = buildAgent(
+    {
+      ...spec,
+      id: "U",
+      label: "agent:U",
+      branchPrefix: "u",
+      worktree: "C:/dev/heute-u",
+      model: "claude-opus-5-5",
+    },
+    { ...ctx, existing: others },
+  );
+  assert.ok("agent" in built);
+  assert.equal(built.agent.model, "claude-opus-5-5");
+  assert.equal(built.agent.label, "agent:U");
+});

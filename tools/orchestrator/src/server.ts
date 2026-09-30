@@ -112,6 +112,12 @@ export function startServer(port: number, orchestrator: Orchestrator, store: Sto
               ),
             });
             return;
+          case "updateAgent":
+            await orchestrator.updateAgent(
+              text("id"),
+              (body["patch"] as Parameters<typeof orchestrator.updateAgent>[1]) ?? {},
+            );
+            break;
           case "deleteAgent":
             await orchestrator.deleteAgent(text("id"));
             break;

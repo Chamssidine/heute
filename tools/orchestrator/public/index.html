@@ -2242,6 +2242,114 @@
         });
       }
 
+      // « Edit an agent »: name, CLI, model (a list), brief, perimeter, effort, budget. Its identity
+      // (id, label, branches, folder) stays. Applies at its next run, so it must not be working.
+      function showEditAgent(agent) {
+        const field = (label, control, hint) =>
+          h(
+            "label",
+            {},
+            h("span", {}, label, hint ? h("span", { class: "hint" }, ` · ${hint}`) : null),
+            control,
+          );
+        const name = h("input", { maxlength: "40", value: agent.name });
+        const cli = h("select", {}, ...state.clis.map((c) => h("option", { value: c.id }, c.id)));
+        cli.value = agent.cli;
+        const model = h("select", {});
+        const fillModels = (selected) => {
+          const list = state.models?.[cli.value] ?? [];
+          const known = selected && list.some((m) => m.id === selected);
+          model.replaceChildren(
+            ...(list.length
+              ? list.map((m) =>
+                  h("option", { value: m.id }, m.label === m.id ? m.id : `${m.label} · ${m.id}`),
+                )
+              : [h("option", { value: "" }, "Aucun modèle proposé par cette CLI")]),
+          );
+          if (known) model.value = selected;
+        };
+        cli.addEventListener("change", () => fillModels());
+        fillModels(agent.model);
+        const brief = h("select", {}, ...state.briefs.map((b) => h("option", { value: b }, b)));
+        brief.value = agent.brief;
+        const paths = h(
+          "textarea",
+          { "aria-label": "Chemins autorisés" },
+          agent.allowedPaths.join("\n"),
+        );
+        const effort = h(
+          "select",
+          {},
+          h("option", { value: "" }, "Par défaut (medium)"),
+          ...["low", "medium", "high", "max"].map((e) => h("option", { value: e }, e)),
+        );
+        effort.value = agent.effort ?? "";
+        const budget = h("input", {
+          type: "number",
+          min: "0.1",
+          max: "20",
+          step: "0.1",
+          placeholder: "défaut",
+        });
+        if (agent.budgetUsd) budget.value = String(agent.budgetUsd);
+        openDialog({
+          title: `Modifier l'agent ${agent.id}`,
+          body: [
+            h(
+              "div",
+              { class: "form" },
+              agent.run
+                ? h(
+                    "div",
+                    { class: "small alert-note" },
+                    "Cet agent travaille : arrête-le d'abord, le changement ne s'applique qu'au run suivant.",
+                  )
+                : h(
+                    "div",
+                    { class: "small muted" },
+                    "Le changement s'applique à son prochain lancement.",
+                  ),
+              field("Nom", name),
+              h("div", { class: "two" }, field("CLI", cli), field("Modèle", model)),
+              field("Brief", brief, "ses règles propres : doit correspondre à son rôle"),
+              field("Chemins autorisés", paths, "un par ligne"),
+              h(
+                "div",
+                { class: "two" },
+                field("Effort", effort),
+                field("Budget par tâche ($)", budget),
+              ),
+            ),
+          ],
+          actions: [
+            {
+              label: "Enregistrer",
+              primary: true,
+              run: () =>
+                act(
+                  "updateAgent",
+                  {
+                    id: agent.id,
+                    patch: {
+                      name: name.value.trim(),
+                      cli: cli.value,
+                      model: model.value,
+                      brief: brief.value,
+                      allowedPaths: paths.value
+                        .split(/\r?\n/)
+                        .map((l) => l.trim())
+                        .filter(Boolean),
+                      effort: effort.value || null,
+                      budgetUsd: budget.value ? Number(budget.value) : null,
+                    },
+                  },
+                  `Agent ${agent.id} modifié`,
+                ),
+            },
+          ],
+        });
+      }
+
       function showAgent(a) {
         const fresh = agentById(a.id) ?? a;
         const next = fresh.queue.find((q) => q.ready);
@@ -2252,6 +2360,7 @@
             danger: true,
             run: () => act("stop", { agent: fresh.id }, `Agent ${fresh.id} arrêté`),
           });
+        actions.push({ label: "Modifier l'agent", run: () => (showEditAgent(fresh), false) });
         actions.push({ label: "Confier des tâches", run: () => (showAssign(fresh), false) });
         if (fresh.created && !fresh.run)
           actions.push({
