@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { IssueSummary, ReviewOutcome } from "./decisions.ts";
+import type { ErrorCode, IssueSummary, ReviewOutcome } from "./decisions.ts";
 import type { PullRequest } from "./github.ts";
 import type { UsageMetrics } from "./adapters/types.ts";
 
@@ -31,16 +31,29 @@ export interface RunRecord {
   m?: UsageMetrics;
   // Cumul USD dépensés sur cette tâche (toutes les runs + réparations).
   cumulCostUsd?: number;
+  // JSON de fin de run demandé à l'agent, quand il est lisible.
+  final?: AgentFinalMessage;
 }
 
 export interface ReviewRecord {
   pr: number;
+  issue?: number;
   outcome: ReviewOutcome | "error";
   reviewer: string;
   reasons: string[];
   reviewerComments: string[];
   at: string;
   fixRounds: number;
+  m?: UsageMetrics;
+}
+
+export interface AgentFinalMessage {
+  v: 1;
+  s: "ok" | "fail" | "blocked";
+  id?: number;
+  pr?: number;
+  val?: { tc?: boolean; li?: boolean; lint?: boolean; te?: boolean; test?: boolean };
+  e?: ErrorCode[];
 }
 
 export interface EventRecord {

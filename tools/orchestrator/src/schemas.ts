@@ -1,12 +1,17 @@
+import type { ErrorCode } from "./decisions.ts";
+import type { AgentFinalMessage } from "./store.ts";
+
 // Schémas JSON pour les messages d'agent et de relecteur.
 // Version 1 : agent (fin de run) + relecteur.
 
 export const AGENT_FINAL_MESSAGE_SCHEMA = {
   v: 1,
   type: "object",
-  required: ["v", "ok"],
+  required: ["v"],
   properties: {
     v: { type: "number", const: 1, description: "Version du schéma" },
+    id: { type: "number", description: "Numéro d'issue" },
+    s: { enum: ["ok", "fail", "blocked"], description: "État final normalisé" },
     ok: { type: "boolean", description: "true si tout compile et teste OK" },
     e: {
       type: "array",
@@ -17,7 +22,9 @@ export const AGENT_FINAL_MESSAGE_SCHEMA = {
       type: "object",
       properties: {
         tc: { type: "boolean", description: "typecheck OK" },
+        li: { type: "boolean", description: "lint OK" },
         lint: { type: "boolean", description: "lint OK" },
+        te: { type: "boolean", description: "tests OK" },
         test: { type: "boolean", description: "test OK" },
       },
       description: "Statut des validations",
@@ -29,9 +36,7 @@ export const AGENT_FINAL_MESSAGE_SCHEMA = {
 
 export function validateAgentFinalMessage(obj: unknown): {
   valid: boolean;
-  ok?: boolean;
-  errors?: string[];
-  validations?: { tc?: boolean; lint?: boolean; test?: boolean };
+  message?: AgentFinalMessage;
   error?: string;
 } {
   if (typeof obj !== "object" || obj === null) {
@@ -44,22 +49,38 @@ export function validateAgentFinalMessage(obj: unknown): {
     return { valid: false, error: "v doit être 1" };
   }
 
-  if (typeof o.ok !== "boolean") {
-    return { valid: false, error: "ok doit être true ou false" };
+  if (o.s !== undefined && o.s !== "ok" && o.s !== "fail" && o.s !== "blocked") {
+    return { valid: false, error: "s doit valoir ok, fail ou blocked" };
   }
 
-  const errors = Array.isArray(o.e) ? o.e.filter((e) => typeof e === "string") : [];
+  if (o.s === undefined && typeof o.ok !== "boolean") {
+    return { valid: false, error: "s ou ok est obligatoire" };
+  }
+
+  const errors = Array.isArray(o.e) ? o.e.filter((e): e is ErrorCode => typeof e === "string") : [];
   const validations = typeof o.val === "object" && o.val !== null ? (o.val as Record<string, unknown>) : {};
+  const status =
+    o.s === "ok" || o.s === "fail" || o.s === "blocked"
+      ? o.s
+      : o.ok === true
+        ? "ok"
+        : "fail";
+  const message: AgentFinalMessage = {
+    v: 1,
+    s: status,
+  };
+  if (typeof o.id === "number") message.id = o.id;
+  if (typeof o.pr === "number") message.pr = o.pr;
+  if (errors.length > 0) message.e = errors;
+  message.val = {
+    tc: validations.tc as boolean | undefined,
+    li: (validations.li ?? validations.lint) as boolean | undefined,
+    te: (validations.te ?? validations.test) as boolean | undefined,
+  };
 
   return {
     valid: true,
-    ok: o.ok,
-    errors: errors.length > 0 ? errors : undefined,
-    validations: {
-      tc: validations.tc as boolean | undefined,
-      lint: validations.lint as boolean | undefined,
-      test: validations.test as boolean | undefined,
-    },
+    message,
   };
 }
 

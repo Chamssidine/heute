@@ -8,11 +8,13 @@ import { exec } from "./exec.ts";
 import { reviewPrompt } from "./prompts.ts";
 import { startResumableRun } from "./runner.ts";
 import { validateReviewerResponse } from "./schemas.ts";
+import type { UsageMetrics } from "./adapters/types.ts";
 import { prepareWorktree } from "./worktree.ts";
 
 export interface ReviewResult extends ReviewDecision {
   reviewerComments: string[];
   validationLog: string;
+  m?: UsageMetrics;
 }
 
 export interface ReviewRequest {
@@ -56,8 +58,8 @@ function parseVerdict(
   try {
     const parsed = JSON.parse(json);
     const result = validateReviewerResponse(parsed);
-    if (!result.valid) return undefined;
-    return { approve: result.approve!, comments: result.comments! };
+    if (!result.valid || result.approve === undefined || !result.comments) return undefined;
+    return { approve: result.approve, comments: result.comments };
   } catch {
     return undefined;
   }
@@ -116,6 +118,7 @@ export async function reviewPullRequest(req: ReviewRequest): Promise<ReviewResul
     budgetUsd: reviewer.budgetUsd ?? 0.5,
   });
   const { code, stdout } = await run.done;
+  const usage = adapter.usage(stdout);
   const verdict = code === 0 ? parseVerdict(adapter.finalText(stdout)) : undefined;
   if (!verdict) {
     return {
@@ -123,6 +126,7 @@ export async function reviewPullRequest(req: ReviewRequest): Promise<ReviewResul
       reasons: ["La relecture automatique n'a pas produit de verdict lisible"],
       reviewerComments: [],
       validationLog: validations.log,
+      m: usage,
     };
   }
   const decision = decideReview({
@@ -130,7 +134,7 @@ export async function reviewPullRequest(req: ReviewRequest): Promise<ReviewResul
     validationsPassed: true,
     reviewerApproved: verdict.approve,
   });
-  return { ...decision, reviewerComments: verdict.comments, validationLog: validations.log };
+  return { ...decision, reviewerComments: verdict.comments, validationLog: validations.log, m: usage };
 }
 
 export function reviewComment(reviewerId: string, result: ReviewResult): string {
