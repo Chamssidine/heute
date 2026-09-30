@@ -1,15 +1,6 @@
 "use client";
 
-import {
-  Alert,
-  Button,
-  Center,
-  Paper,
-  PasswordInput,
-  Stack,
-  TextInput,
-  Title,
-} from "@mantine/core";
+import { Button, Center, Paper, PasswordInput, Stack, TextInput, Title } from "@mantine/core";
 import { useState, type FormEvent } from "react";
 import { de } from "../strings/de.ts";
 import { useAuth } from "./AuthProvider.tsx";
@@ -35,15 +26,21 @@ export function LoginForm() {
   }
 
   return (
-    <Center mih="100vh">
-      <Paper withBorder p="xl" w={380} component="form" onSubmit={onSubmit}>
-        <Stack>
-          <Title order={2}>{de.login.title}</Title>
-          {error ? (
-            <Alert color="red" role="alert">
-              {error}
-            </Alert>
-          ) : null}
+    <Center mih="100vh" p="md">
+      <Paper
+        withBorder
+        p="xl"
+        w="100%"
+        maw={400}
+        radius="md"
+        shadow="sm"
+        component="form"
+        onSubmit={onSubmit}
+      >
+        <Stack gap="md">
+          <Title order={2} fz="xl" fw={600}>
+            {de.login.title}
+          </Title>
           <TextInput
             label={de.login.email}
             type="email"
@@ -56,10 +53,11 @@ export function LoginForm() {
             label={de.login.password}
             autoComplete="current-password"
             required
+            error={error}
             value={password}
             onChange={(e) => setPassword(e.currentTarget.value)}
           />
-          <Button type="submit" loading={busy}>
+          <Button type="submit" size="md" fullWidth loading={busy}>
             {de.login.submit}
           </Button>
         </Stack>
