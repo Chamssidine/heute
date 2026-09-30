@@ -322,6 +322,14 @@ export class LocalForge implements Forge {
 
   async ensureStatusLabels(): Promise<void> {}
 
+  // `git merge-tree` computes the merge without touching any worktree: exit 1 means conflicts.
+  async wouldConflict(pr: number): Promise<boolean> {
+    const p = this.openPr(pr);
+    if (!p) return false;
+    const r = await this.git(this.o.repoDir, ["merge-tree", "--write-tree", p.base, p.head]);
+    return r.code === 1;
+  }
+
   // ---- Publishing -----------------------------------------------------------------------------
 
   // The only network use: bring production in (it may have got the publish merge or a hotfix),
