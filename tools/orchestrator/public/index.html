@@ -869,6 +869,68 @@
         font-size: 12px;
         color: var(--text-3);
       }
+
+      .form {
+        display: grid;
+        gap: 12px;
+      }
+      .form label {
+        display: grid;
+        gap: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-2);
+      }
+      .form input,
+      .form select,
+      .form textarea {
+        font: inherit;
+        font-weight: 400;
+        color: var(--text);
+        background: var(--surface);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius);
+        padding: 7px 10px;
+        min-height: 36px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .form textarea {
+        min-height: 92px;
+        font: 12px/1.5 var(--mono);
+      }
+      .form .two {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: 1fr 1fr;
+      }
+      .form .hint {
+        font-weight: 400;
+        color: var(--text-3);
+      }
+      .checklist {
+        max-height: 190px;
+        overflow: auto;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 4px 8px;
+        display: grid;
+        gap: 2px;
+      }
+      .checklist label {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        font-weight: 400;
+        font-size: 13px;
+        color: var(--text);
+        padding: 4px 0;
+      }
+      .checklist input {
+        width: auto;
+        min-height: 0;
+        margin-top: 2px;
+      }
     </style>
   </head>
   <body>
@@ -902,7 +964,10 @@
       </section>
 
       <section aria-labelledby="h-agents">
-        <h2 id="h-agents">Agents</h2>
+        <h2 id="h-agents">
+          Agents
+          <button class="ghost" id="new-agent" style="margin-left: auto">+ Créer un agent</button>
+        </h2>
         <div class="agents" id="agents"></div>
       </section>
 
@@ -1855,6 +1920,188 @@
       // Last log line seen per agent: a new one gets a short highlight.
       const lastLogLine = {};
 
+      // Open tasks an agent could take: not running, not already delivered to review.
+      function assignableTasks() {
+        const withPr = new Set(state.prs.map((p) => p.issue).filter(Boolean));
+        return state.issues.filter(
+          (i) => i.state === "OPEN" && !i.labels.includes("en-cours") && !withPr.has(i.number),
+        );
+      }
+
+      function taskChecklist(preselected = []) {
+        const tasks = assignableTasks();
+        const boxes = tasks.map((i) => {
+          const box = h("input", { type: "checkbox", value: String(i.number) });
+          box.checked = preselected.includes(i.number);
+          return h(
+            "label",
+            {},
+            box,
+            h(
+              "span",
+              {},
+              `#${i.number} ${i.title} `,
+              h("span", { class: "faint" }, i.agent ? `· agent ${i.agent}` : ""),
+            ),
+          );
+        });
+        return {
+          node: boxes.length
+            ? h("div", { class: "checklist" }, ...boxes)
+            : h("div", { class: "small faint" }, "Aucune tâche ouverte à confier."),
+          values: () =>
+            boxes.flatMap((label) => {
+              const input = label.querySelector("input");
+              return input.checked ? [Number(input.value)] : [];
+            }),
+        };
+      }
+
+      function showAssign(agent) {
+        const tasks = taskChecklist();
+        openDialog({
+          title: `Confier des tâches à l'agent ${agent.id}`,
+          body: [
+            h(
+              "div",
+              { class: "small muted" },
+              "Les tâches cochées deviennent les siennes : elles quittent la file de l'agent précédent.",
+            ),
+            tasks.node,
+          ],
+          actions: [
+            {
+              label: "Confier",
+              primary: true,
+              run: () => {
+                const numbers = tasks.values();
+                if (numbers.length === 0) {
+                  toast("Coche au moins une tâche", "error");
+                  return false;
+                }
+                return act(
+                  "assign",
+                  { numbers, agent: agent.id },
+                  `${numbers.length} tâche(s) confiée(s) à ${agent.id}`,
+                );
+              },
+            },
+          ],
+        });
+      }
+
+      // « Create an agent »: which LLM, which brief, which part of the repository it may touch,
+      // and which tasks it takes. It starts from an existing agent to save typing.
+      function showCreateAgent() {
+        const field = (label, control, hint) =>
+          h(
+            "label",
+            {},
+            h("span", {}, label, hint ? h("span", { class: "hint" }, ` · ${hint}`) : null),
+            control,
+          );
+        const templateSelect = h(
+          "select",
+          {},
+          h("option", { value: "" }, "Aucun : tout remplir"),
+          ...state.agents.map((a) => h("option", { value: a.id }, `${a.id} · ${a.name}`)),
+        );
+        const id = h("input", { placeholder: "U2", maxlength: "6", autocomplete: "off" });
+        const name = h("input", { placeholder: "Mobile UI 2", maxlength: "40" });
+        const cli = h("select", {}, ...state.clis.map((c) => h("option", { value: c.id }, c.id)));
+        const model = h("input", { placeholder: "claude-sonnet-5-5" });
+        const brief = h("select", {}, ...state.briefs.map((b) => h("option", { value: b }, b)));
+        const paths = h("textarea", {
+          "aria-label": "Chemins autorisés",
+          placeholder: "apps/mobile/src/features/*/components/**\napps/mobile/src/strings/**",
+        });
+        const effort = h(
+          "select",
+          {},
+          h("option", { value: "" }, "Par défaut (medium)"),
+          ...["low", "medium", "high", "max"].map((e) => h("option", { value: e }, e)),
+        );
+        const budget = h("input", {
+          type: "number",
+          min: "0.1",
+          max: "20",
+          step: "0.1",
+          placeholder: "1.5",
+        });
+        const tasks = taskChecklist();
+
+        templateSelect.addEventListener("change", () => {
+          const t = agentById(templateSelect.value);
+          if (!t) return;
+          cli.value = t.cli;
+          model.value = t.model;
+          brief.value = t.brief;
+          paths.value = t.allowedPaths.join("\n");
+        });
+
+        openDialog({
+          title: "Créer un agent",
+          body: [
+            h(
+              "div",
+              { class: "form" },
+              field(
+                "Partir de",
+                templateSelect,
+                "copie la CLI, le modèle, le brief et le périmètre",
+              ),
+              h(
+                "div",
+                { class: "two" },
+                field("Identifiant", id, "1 à 6 caractères"),
+                field("Nom", name),
+              ),
+              h("div", { class: "two" }, field("CLI", cli), field("Modèle", model)),
+              field("Brief", brief, "ses règles propres"),
+              field(
+                "Chemins autorisés",
+                paths,
+                "un par ligne : la partie du projet où il peut écrire",
+              ),
+              h(
+                "div",
+                { class: "two" },
+                field("Effort", effort),
+                field("Budget par tâche ($)", budget),
+              ),
+              field("Tâches à lui confier", tasks.node, "optionnel"),
+            ),
+          ],
+          actions: [
+            {
+              label: "Créer l'agent",
+              primary: true,
+              run: () =>
+                act(
+                  "createAgent",
+                  {
+                    spec: {
+                      id: id.value.trim(),
+                      name: name.value.trim(),
+                      cli: cli.value,
+                      model: model.value.trim(),
+                      brief: brief.value,
+                      allowedPaths: paths.value
+                        .split(/\r?\n/)
+                        .map((l) => l.trim())
+                        .filter(Boolean),
+                      ...(effort.value ? { effort: effort.value } : {}),
+                      ...(budget.value ? { budgetUsd: Number(budget.value) } : {}),
+                    },
+                    assign: tasks.values(),
+                  },
+                  `Agent ${id.value.trim()} créé`,
+                ),
+            },
+          ],
+        });
+      }
+
       function showAgent(a) {
         const fresh = agentById(a.id) ?? a;
         const next = fresh.queue.find((q) => q.ready);
@@ -1864,6 +2111,13 @@
             label: "Arrêter l'agent",
             danger: true,
             run: () => act("stop", { agent: fresh.id }, `Agent ${fresh.id} arrêté`),
+          });
+        actions.push({ label: "Confier des tâches", run: () => (showAssign(fresh), false) });
+        if (fresh.created && !fresh.run)
+          actions.push({
+            label: "Supprimer l'agent",
+            danger: true,
+            run: () => act("deleteAgent", { id: fresh.id }, `Agent ${fresh.id} supprimé`),
           });
         if (!fresh.run && next)
           actions.push({
@@ -1878,6 +2132,20 @@
               "div",
               { class: "small muted" },
               `${fresh.tool ?? fresh.cli} · ${fresh.model} · ${agentStatus(fresh).label}`,
+            ),
+            h(
+              "div",
+              {},
+              h(
+                "div",
+                { class: "small muted", style: "margin-bottom:4px" },
+                `Périmètre · ${fresh.brief}`,
+              ),
+              h(
+                "pre",
+                { class: "log", "aria-label": "Chemins autorisés" },
+                fresh.allowedPaths.join("\n"),
+              ),
             ),
             fresh.run?.manual
               ? h(
@@ -2180,6 +2448,7 @@
       $("refresh").append(icon("refresh"));
       $("refresh").addEventListener("click", () => act("refresh", {}, "Actualisé"));
       $("journal").addEventListener("click", () => state && showJournal());
+      $("new-agent").addEventListener("click", () => state && showCreateAgent());
       setInterval(renderStatus, 1000);
       $("autopilot").addEventListener("click", () => {
         if (!state?.autopilot) return;

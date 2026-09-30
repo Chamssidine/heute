@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ErrorCode, IssueSummary, ReviewOutcome } from "./decisions.ts";
+import type { AgentConfig } from "./config.ts";
 import type { PullRequest } from "./github.ts";
 import type { UsageMetrics } from "./adapters/types.ts";
 
@@ -72,6 +73,8 @@ export interface PersistedState {
   events: EventRecord[];
   // Per agent: when the LLM provider's quota resets (ISO date). Kept across restarts.
   quotaUntil?: Record<AgentId, string>;
+  // Agents created from the dashboard: merged into the config at startup.
+  customAgents?: Record<string, AgentConfig>;
   // Per branch: the commit the orchestrator already validated (typecheck, lint, tests) and the
   // log. The review reuses it instead of running everything a second time.
   validated?: Record<string, { sha: string; log: string }>;

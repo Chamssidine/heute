@@ -11,6 +11,8 @@ export interface AgentConfig {
   branchPrefix: string;
   brief: string;
   allowedPaths: string[];
+  // Created from the dashboard (saved in the state, removable), not declared in config.json.
+  created?: boolean;
   effort?: "low" | "medium" | "high" | "max";
   budgetUsd?: number;
 }
