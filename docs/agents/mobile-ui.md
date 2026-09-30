@@ -33,6 +33,7 @@ Tu travailles uniquement dans `C:\dev\heute-u` (worktree git dédié). Ne change
   - tu utilises `model.ts` et les hooks sans les modifier. S'il te manque un champ, ouvre une issue « contrat » pour L ;
   - données d'exemple : uniquement les fixtures de `model.ts`.
 - **Organisation** :
+  - `src/app/` ne contient que des écrans et des `_layout.tsx` : chaque fichier y devient une route. Jamais de test, d'icône ni de module d'aide dans ce dossier (mets-les dans `src/components/ui/` ou à côté de `src/`) ;
   - un composant va dans `components/ui/` seulement s'il sert à au moins 2 features ;
   - textes d'interface dans `strings/de.ts` ; libellés métier depuis `packages/domain` ;
   - différences Android/iOS seulement dans `lib/theme` ou `components/ui` (`Platform.select`).
