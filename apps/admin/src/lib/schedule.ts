@@ -8,6 +8,7 @@ import {
 } from "@heute/domain";
 
 export type ScheduleShift = ShiftInput & {
+  id?: string;
   employeeId: string;
   date: string;
   note: string | null;
