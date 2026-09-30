@@ -50,6 +50,21 @@ export class GitHub {
     return raw.map((i) => ({ ...i, labels: i.labels.map((l) => l.name) }));
   }
 
+  // Head branches of recently merged PRs (a task branch is named <prefix>/i<issue>).
+  async mergedBranches(): Promise<string[]> {
+    const out = await this.run([
+      "pr",
+      "list",
+      "--state",
+      "merged",
+      "--limit",
+      "100",
+      "--json",
+      "headRefName",
+    ]);
+    return (JSON.parse(out) as { headRefName: string }[]).map((p) => p.headRefName);
+  }
+
   async openPullRequests(): Promise<PullRequest[]> {
     const out = await this.run([
       "pr",

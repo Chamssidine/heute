@@ -48,12 +48,12 @@ Toute modification passe par une PR relue par l'agent qui consomme le contrat.
 - Payload push `{ type, route, params }` (`packages/domain`).
 - `apps/mobile/src/features/*/model.ts` (de L vers U).
 
-## Avant la PR
+## Avant de livrer
 
-- Dans le workspace touché : `npm run typecheck`, `npm run lint`, `npm test`. Si `supabase/` change : `supabase test db`.
-- Colle la sortie dans la PR. Pas de « terminé » sans cette sortie.
-- Branche `<a|l|u>/<ID>-<slug>`, une tâche par PR, titre `<ID>: …`.
-- Description courte : ce qui change, fichiers, validations, questions ouvertes.
+- Tu n'as accès ni à GitHub ni au réseau : ni `gh`, ni `git push`, ni PR. Tu commites en local sur ta branche ; l'orchestrateur revalide, pousse et ouvre la PR.
+- Dans le workspace touché : `npm run typecheck`, `npm run lint`, `npm test`, jusqu'à ce que tout passe. Si `supabase/` change : `supabase test db`.
+- Branche `<a|a2|l|u>/i<numéro d'issue>`, une tâche par branche.
+- Ta réponse finale : ce qui change, fichiers, validations, questions ouvertes.
 - Tu ne merges jamais.
 
 ## Réponses
