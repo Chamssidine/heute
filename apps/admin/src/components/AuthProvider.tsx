@@ -9,14 +9,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { canAccessAdmin, loginErrorMessage, type AppRole } from "../lib/auth.ts";
+import { loginErrorMessage, profileFromEmployee, type ProfileState } from "../lib/auth.ts";
 import { getSupabase } from "../lib/supabase.ts";
+import { de } from "../strings/de.ts";
 
-export type AuthState =
-  | { status: "loading" }
-  | { status: "signedOut" }
-  | { status: "forbidden"; displayName: string }
-  | { status: "ready"; displayName: string; role: AppRole };
+export type AuthState = { status: "loading" } | { status: "signedOut" } | ProfileState;
 
 type AuthContextValue = {
   state: AuthState;
@@ -43,14 +40,7 @@ async function loadState(userId: string): Promise<AuthState> {
   if (error) {
     throw error;
   }
-  // Pas de ligne employees active : aucun accès (la RLS le impose aussi côté base).
-  if (!data || !data.active) {
-    return { status: "signedOut" };
-  }
-  if (!canAccessAdmin(data.role)) {
-    return { status: "forbidden", displayName: data.display_name };
-  }
-  return { status: "ready", displayName: data.display_name, role: data.role };
+  return profileFromEmployee(data);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -84,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (error: unknown) => {
         console.error("Profil konnte nicht geladen werden", error);
         if (!cancelled) {
-          setState({ status: "signedOut" });
+          setState({ status: "error", message: de.profileLoadError });
         }
       },
     );

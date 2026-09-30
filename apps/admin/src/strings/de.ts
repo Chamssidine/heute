@@ -5,6 +5,9 @@ export const de = {
   noAccess: "Kein Zugriff",
   noAccessHint:
     "Dieser Bereich ist nur für Administration und Küchenleitung. Bitte melde dich mit einem anderen Konto an.",
+  accountDisabled: "Dieses Benutzerkonto ist deaktiviert. Frag bitte an der Rezeption.",
+  profileLoadError:
+    "Dein Profil konnte nicht geladen werden. Bitte versuche es später erneut oder melde dich ab.",
   login: {
     title: "Anmeldung",
     email: "E-Mail",

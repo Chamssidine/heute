@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Alert,
   AppShell,
   Button,
   Center,
@@ -13,7 +14,7 @@ import {
 } from "@mantine/core";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { de } from "../strings/de.ts";
 import { useAuth } from "./AuthProvider.tsx";
 import { LoginForm } from "./LoginForm.tsx";
@@ -30,6 +31,16 @@ export const NAV_ITEMS = [
 export function AdminShell({ children }: { children: ReactNode }) {
   const { state, signOut } = useAuth();
   const pathname = usePathname();
+  const [signOutError, setSignOutError] = useState<string | null>(null);
+
+  async function onSignOut() {
+    setSignOutError(null);
+    try {
+      await signOut();
+    } catch (e) {
+      setSignOutError(e instanceof Error ? e.message : de.login.genericError);
+    }
+  }
 
   if (state.status === "loading") {
     return (
@@ -43,13 +54,38 @@ export function AdminShell({ children }: { children: ReactNode }) {
     return <LoginForm />;
   }
 
+  if (state.status === "error") {
+    return (
+      <Center mih="100vh">
+        <Stack align="center" maw={420}>
+          <Alert color="red" role="alert">
+            {state.message}
+          </Alert>
+          {signOutError ? (
+            <Alert color="red" role="alert">
+              {signOutError}
+            </Alert>
+          ) : null}
+          <Button variant="default" onClick={onSignOut}>
+            {de.logout}
+          </Button>
+        </Stack>
+      </Center>
+    );
+  }
+
   if (state.status === "forbidden") {
     return (
       <Center mih="100vh">
         <Stack align="center" maw={420}>
           <Title order={2}>{de.noAccess}</Title>
           <Text ta="center">{de.noAccessHint}</Text>
-          <Button variant="default" onClick={() => void signOut()}>
+          {signOutError ? (
+            <Alert color="red" role="alert">
+              {signOutError}
+            </Alert>
+          ) : null}
+          <Button variant="default" onClick={onSignOut}>
             {de.logout}
           </Button>
         </Stack>
@@ -64,7 +100,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <Title order={4}>{de.appName}</Title>
           <Group>
             <Text size="sm">{state.displayName}</Text>
-            <Button variant="default" size="xs" onClick={() => void signOut()}>
+            {signOutError ? (
+              <Text size="sm" c="red" role="alert">
+                {signOutError}
+              </Text>
+            ) : null}
+            <Button variant="default" size="xs" onClick={onSignOut}>
               {de.logout}
             </Button>
           </Group>
