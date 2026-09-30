@@ -1,5 +1,13 @@
 {
   "repo": "Chamssidine/heute",
+  "baseBranch": "dev",
+  "productionBranch": "main",
+  "autopilot": {
+    "launchAgents": true,
+    "autoFix": true,
+    "failureLimit": 4,
+    "dailyBudgetUsd": 25
+  },
   "port": 4000,
   "refreshSeconds": 60,
   "runTimeoutMinutes": 45,

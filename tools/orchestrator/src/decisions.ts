@@ -201,3 +201,20 @@ export function pickReviewerId(input: ReviewerPickInput): "claude" | "codex" | "
   if (input.diffLines < 80) return "codex"; // haiku (or similar small model if available)
   return "claude"; // sonnet (default)
 }
+
+// Autopilot circuit breaker: how many runs in a row ended without a PR (most recent first).
+// A PR resets the count; quota stops, restarts and cancellations are not the agent's failure.
+export function failureStreak(results: readonly (string | undefined)[]): number {
+  let streak = 0;
+  for (const result of [...results].reverse()) {
+    if (!result) continue;
+    if (result.startsWith("PR #")) break;
+    if (result.startsWith("aucune PR")) streak += 1;
+  }
+  return streak;
+}
+
+// A PR is waiting for its first (or a new) review when it carries no status label at all.
+export function needsReview(labels: readonly string[]): boolean {
+  return !labels.some((l) => (Object.values(STATUS_LABELS) as string[]).includes(l));
+}

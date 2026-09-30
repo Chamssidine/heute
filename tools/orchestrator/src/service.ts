@@ -3,7 +3,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { adapterFor } from "./adapters/index.ts";
-import { agentOfBranch, type Config } from "./config.ts";
+import {
+  agentOfBranch,
+  autopilotSettings,
+  baseBranch,
+  productionBranch,
+  type Config,
+} from "./config.ts";
 
 const GENERATED_FILE_PATTERNS = [
   "package-lock.json",
@@ -36,7 +42,9 @@ function filterDiff(rawDiff: string): string {
   return result.join("\n");
 }
 import {
+  failureStreak,
   isManualRunDone,
+  needsReview,
   nextIssue,
   pickReviewerId,
   queueFor,
@@ -51,13 +59,23 @@ import { startResumableRun, type RunHandle } from "./runner.ts";
 import type { RunKind, RunRecord, Store } from "./store.ts";
 import { validateAgentFinalMessage } from "./schemas.ts";
 import {
+  aheadCount,
   deleteLocalBranch,
   ensureWorktree,
+  fastForwardInto,
+  fetchOrigin,
   prepareWorktree,
   remoteBranchExists,
+  syncWithBase,
 } from "./worktree.ts";
 
 const ALL_STATUS = Object.values(STATUS_LABELS);
+// Marker of the review reason written when a merge into the base branch hit a conflict.
+const CONFLICT_REASON = "Conflit de fusion avec la branche de base";
+// Automatic corrections stop here whatever the reviews say: a human looks at it.
+const MAX_AUTO_FIX_ROUNDS = 4;
+const MAX_REVIEW_ATTEMPTS = 3;
+const RELEASE_CHECK_MS = 5 * 60_000;
 const TASK_BUDGET_USD = 1.5;
 const BUDGET_ERROR = /budget (?:exceeded|reached)|max(?:imum)? budget|BUDGET_EXCEEDED/i;
 
@@ -114,6 +132,12 @@ export class Orchestrator {
   private reviewing: number | undefined;
   private readonly reviewQueue: { pr: number; reviewer: string }[] = [];
   private readonly interrupted: RunRecord[] = [];
+  private ticking = false;
+  private readonly launching = new Set<string>();
+  private readonly reviewAttempts = new Map<number, number>();
+  private readonly loggedOnce = new Set<string>();
+  private lastReleaseCheck = 0;
+  private release: { ahead: number; pr?: number; error?: string } = { ahead: 0 };
 
   constructor(config: Config, github: GitHub, store: Store, repoDir: string) {
     this.config = config;
@@ -159,51 +183,88 @@ export class Orchestrator {
 
   async launch(agentId: string): Promise<void> {
     const agent = this.requireAgent(agentId);
-    if (this.running.has(agentId)) throw new Error(`L'agent ${agentId} travaille déjà`);
+    if (this.running.has(agentId) || this.launching.has(agentId))
+      throw new Error(`L'agent ${agentId} travaille déjà`);
     this.assertQuotaAvailable(agentId);
-    await this.refresh();
-    const issue = nextIssue(agent.label, this.store.live.issues, this.issuesWithOpenPr());
-    if (!issue) throw new Error(`Aucune tâche prête pour l'agent ${agentId}`);
-    const branch = `${agent.branchPrefix}/i${issue.number}`;
-    await ensureWorktree(this.repoDir, agent.worktree);
-    // Resume the pushed work of an interrupted run instead of starting over.
-    const resume = await remoteBranchExists(agent.worktree, branch);
-    if (resume) {
-      await prepareWorktree(agent.worktree, { branch });
-    } else {
-      await prepareWorktree(agent.worktree, { detach: "main" });
-      await deleteLocalBranch(agent.worktree, branch);
+    this.launching.add(agentId);
+    try {
+      await this.refresh();
+      const issue = nextIssue(agent.label, this.store.live.issues, this.issuesWithOpenPr());
+      if (!issue) throw new Error(`Aucune tâche prête pour l'agent ${agentId}`);
+      const branch = `${agent.branchPrefix}/i${issue.number}`;
+      const base = baseBranch(this.config);
+      await ensureWorktree(this.repoDir, agent.worktree);
+      // Resume the pushed work of an interrupted run instead of starting over.
+      const resume = await remoteBranchExists(agent.worktree, branch);
+      if (resume) {
+        await prepareWorktree(agent.worktree, { branch });
+      } else {
+        await prepareWorktree(agent.worktree, { detach: base });
+        await deleteLocalBranch(agent.worktree, branch);
+      }
+      await this.github.setLabels(issue.number, [STATUS_LABELS.running]);
+      this.start(
+        agentId,
+        "task",
+        issue.number,
+        undefined,
+        branch,
+        taskPrompt(agentId, agent, issue.number, branch, resume, base),
+      );
+    } finally {
+      this.launching.delete(agentId);
     }
-    await this.github.setLabels(issue.number, [STATUS_LABELS.running]);
-    this.start(
-      agentId,
-      "task",
-      issue.number,
-      undefined,
-      branch,
-      taskPrompt(agentId, agent, issue.number, branch, resume),
-    );
   }
 
   async sendBack(prNumber: number, humanNote: string): Promise<void> {
     const pr = this.requirePr(prNumber);
     const agentId = this.requireAgentOf(pr);
-    const agent = this.requireAgent(agentId);
-    if (this.running.has(agentId)) throw new Error(`L'agent ${agentId} travaille déjà`);
+    if (this.running.has(agentId) || this.launching.has(agentId))
+      throw new Error(`L'agent ${agentId} travaille déjà`);
     this.assertQuotaAvailable(agentId);
+    this.launching.add(agentId);
+    try {
+      await this.sendBackNow(pr, agentId, humanNote);
+    } finally {
+      this.launching.delete(agentId);
+    }
+  }
+
+  private async sendBackNow(pr: PullRequest, agentId: string, humanNote: string): Promise<void> {
+    const agent = this.requireAgent(agentId);
+    const prNumber = pr.number;
     const review = this.store.data.reviews[String(prNumber)];
+    const issue = this.issueOfBranch(pr.headRefName);
+    this.assertTaskBudgetAvailable(issue);
+    const base = baseBranch(this.config);
+    await ensureWorktree(this.repoDir, agent.worktree);
+    await prepareWorktree(agent.worktree, { branch: pr.headRefName });
+    // The base branch moves while a PR waits: bring it in first. A clean merge costs no agent
+    // run at all; only real conflicts are handed to the agent.
+    const sync =
+      base === productionBranch(this.config)
+        ? "up-to-date"
+        : await syncWithBase(agent.worktree, base);
+    const reasons = review?.reasons ?? [];
+    const conflictOnly = reasons.length > 0 && reasons.every((r) => r.startsWith(CONFLICT_REASON));
+    if (sync !== "conflict" && conflictOnly) {
+      this.store.log("info", `PR #${prNumber} : ${base} fusionné sans conflit, nouvelle relecture`);
+      await this.github.setLabels(prNumber, [], this.labelsOn(pr));
+      await this.refresh();
+      await this.review(prNumber, this.config.defaultReviewer);
+      return;
+    }
     const feedback =
       [
-        ...(review?.reasons ?? []),
+        ...reasons,
         ...(review?.reviewerComments ?? []),
+        ...(sync === "conflict"
+          ? [`${CONFLICT_REASON} ${base} : les fichiers contiennent des marqueurs de conflit`]
+          : []),
         ...(humanNote.trim() ? [`Note de l'orchestrateur humain : ${humanNote.trim()}`] : []),
       ]
         .map((l) => `- ${l}`)
         .join("\n") || "- Relire la PR et corriger les défauts signalés en commentaire.";
-    const issue = this.issueOfBranch(pr.headRefName);
-    this.assertTaskBudgetAvailable(issue);
-    await ensureWorktree(this.repoDir, agent.worktree);
-    await prepareWorktree(agent.worktree, { branch: pr.headRefName });
     await this.github.setLabels(prNumber, [STATUS_LABELS.running], this.labelsOn(pr));
     this.start(
       agentId,
@@ -211,7 +272,7 @@ export class Orchestrator {
       issue ?? 0,
       prNumber,
       pr.headRefName,
-      fixPrompt(agentId, agent, issue ?? 0, prNumber, pr.headRefName, feedback),
+      fixPrompt(agentId, agent, issue ?? 0, prNumber, pr.headRefName, feedback, base),
       pr.headRefOid,
     );
   }
@@ -251,6 +312,8 @@ export class Orchestrator {
       return;
     }
     const pr = this.requirePr(prNumber);
+    if (this.isReleasePr(pr))
+      throw new Error("La PR de publication n'est pas relue : elle regroupe des PR déjà relues");
     // PRs opened outside an agent branch (orchestrator, human) are reviewed without a perimeter.
     const agentId = agentOfBranch(this.config, pr.headRefName);
     const previous = this.store.data.reviews[String(prNumber)];
@@ -264,7 +327,10 @@ export class Orchestrator {
       if (this.taskBudgetExceeded(issue)) {
         const cost = this.taskCostUsd(issue);
         const reason = `Budget tâche dépassé (${cost.toFixed(2)} $ / ${TASK_BUDGET_USD.toFixed(2)} $)`;
-        await this.github.comment(prNumber, `### Relecture automatique : attention humaine requise\n\n- ${reason}`);
+        await this.github.comment(
+          prNumber,
+          `### Relecture automatique : attention humaine requise\n\n- ${reason}`,
+        );
         await this.github.setLabels(prNumber, [STATUS_LABELS.human], [STATUS_LABELS.review]);
         this.store.data.reviews[String(prNumber)] = {
           pr: prNumber,
@@ -326,15 +392,54 @@ export class Orchestrator {
         m: result.m,
       };
       this.refreshCumulCost(issue);
-      this.store.log("info", `PR #${prNumber} relue par ${effectiveReviewerId} : ${result.outcome}`);
+      this.reviewAttempts.delete(prNumber);
+      this.store.log(
+        "info",
+        `PR #${prNumber} relue par ${effectiveReviewerId} : ${result.outcome}`,
+      );
     } catch (error) {
       this.store.log("error", `Relecture PR #${prNumber} : ${(error as Error).message}`);
+      await this.giveUpOrRetryReview(prNumber, pr).catch(() => undefined);
     } finally {
       this.reviewing = undefined;
       this.store.setActivity(undefined);
       await this.refresh().catch(() => undefined);
       this.startNextQueuedReview();
+      void this.autopilotTick();
     }
+  }
+
+  // A failed review leaves the PR without verdict: the autopilot retries it, three times at most,
+  // then hands it to the human instead of looping.
+  private async giveUpOrRetryReview(prNumber: number, pr: PullRequest): Promise<void> {
+    const attempts = (this.reviewAttempts.get(prNumber) ?? 0) + 1;
+    this.reviewAttempts.set(prNumber, attempts);
+    if (attempts >= MAX_REVIEW_ATTEMPTS) {
+      await this.github.setLabels(
+        prNumber,
+        [STATUS_LABELS.human],
+        [...this.labelsOn(pr), STATUS_LABELS.review],
+      );
+      this.store.log("warn", `PR #${prNumber} : ${attempts} relectures en échec, attente humaine`);
+    } else {
+      await this.github.setLabels(prNumber, [], [STATUS_LABELS.review]);
+    }
+  }
+
+  // « Closes #N » closes an issue only when the PR reaches the default branch: close it here
+  // once the human has merged into the base branch.
+  private async afterMerge(pr: PullRequest, issue: number | undefined): Promise<void> {
+    if (pr.baseRefName !== productionBranch(this.config) && issue !== undefined) {
+      await this.github
+        .closeIssue(issue, `Livrée par la PR #${pr.number}, mergée dans ${pr.baseRefName}.`)
+        .catch((e: Error) => this.store.log("warn", `Fermeture de #${issue} : ${e.message}`));
+    }
+    // A stale remote branch would be « resumed » by mistake if the issue is ever reopened.
+    await this.github
+      .deleteBranch(pr.headRefName)
+      .catch((e: Error) =>
+        this.store.log("warn", `Suppression de ${pr.headRefName} : ${e.message}`),
+      );
   }
 
   private startNextQueuedReview(): void {
@@ -351,9 +456,190 @@ export class Orchestrator {
 
   async merge(prNumber: number): Promise<void> {
     const pr = this.requirePr(prNumber);
-    await this.github.merge(prNumber);
+    if (this.isReleasePr(pr)) {
+      await this.github.mergeRelease(prNumber);
+    } else {
+      await this.github.mergeIntoBase(prNumber);
+      await this.afterMerge(pr, this.issueOfBranch(pr.headRefName));
+    }
     this.store.log("info", `PR #${prNumber} mergée par l'humain (${pr.title})`);
     await this.refresh();
+  }
+
+  setAutopilot(enabled: boolean): void {
+    this.store.data.autopilot = enabled
+      ? { enabled: true, resumedAt: new Date().toISOString() }
+      : { enabled: false };
+    this.store.log("info", enabled ? "Autopilote activé" : "Autopilote désactivé par l'humain");
+    this.store.save();
+    if (enabled) void this.autopilotTick();
+  }
+
+  // ---- Autopilot ------------------------------------------------------------------------------
+  // Everything the human used to click except merging: reviews, corrections, the next launch,
+  // and keeping the « publish » PR up to date. Merging stays a human click. Guard rails stop it
+  // (never silently): failures in a row, daily budget, per-task budget, correction rounds, quota.
+
+  async autopilotTick(): Promise<void> {
+    if (this.ticking) return;
+    this.ticking = true;
+    try {
+      await this.retargetPullRequests();
+      await this.maintainRelease();
+      const ap = autopilotSettings(this.config);
+      const state = this.store.data.autopilot;
+      if (state?.enabled === false || state?.pausedReason) return;
+      const reason = this.circuitReason(ap);
+      if (reason) {
+        this.store.data.autopilot = { enabled: true, pausedReason: reason };
+        this.store.log("error", `Autopilote arrêté : ${reason}`);
+        this.store.save();
+        return;
+      }
+      const agentPrs = this.store.live.prs.filter((p) => agentOfBranch(this.config, p.headRefName));
+
+      for (const pr of agentPrs.filter((p) => needsReview(p.labels))) {
+        this.review(pr.number, this.config.defaultReviewer).catch((e: Error) =>
+          this.store.log("error", `Relecture PR #${pr.number} : ${e.message}`),
+        );
+      }
+
+      if (ap.autoFix) {
+        for (const pr of agentPrs.filter((p) => p.labels.includes(STATUS_LABELS.changes))) {
+          const agentId = agentOfBranch(this.config, pr.headRefName);
+          if (!agentId || this.running.has(agentId) || this.launching.has(agentId)) continue;
+          const rounds = this.store.data.reviews[String(pr.number)]?.fixRounds ?? 0;
+          if (rounds >= MAX_AUTO_FIX_ROUNDS) {
+            await this.github.setLabels(pr.number, [STATUS_LABELS.human], [STATUS_LABELS.changes]);
+            this.store.log("warn", `PR #${pr.number} : ${rounds} corrections, attente humaine`);
+            continue;
+          }
+          await this.sendBack(pr.number, "").catch((e: Error) =>
+            this.autoError(`fix${pr.number}`, e.message, () =>
+              this.github.setLabels(pr.number, [STATUS_LABELS.human], [STATUS_LABELS.changes]),
+            ),
+          );
+        }
+      }
+
+      if (ap.launchAgents) {
+        for (const [agentId, agent] of Object.entries(this.config.agents)) {
+          if (this.running.has(agentId) || this.launching.has(agentId)) continue;
+          if (!nextIssue(agent.label, this.store.live.issues, this.issuesWithOpenPr())) continue;
+          await this.launch(agentId).catch((e: Error) =>
+            this.autoError(`launch${agentId}`, e.message),
+          );
+        }
+      }
+    } catch (error) {
+      this.store.log("error", `Autopilote : ${(error as Error).message}`);
+    } finally {
+      this.ticking = false;
+    }
+  }
+
+  // Quota waits and busy agents are normal; anything else is logged once, not every minute.
+  private autoError(key: string, message: string, onBudget?: () => Promise<void>): void {
+    if (/Quota de l'agent|travaille déjà|Aucune tâche prête/.test(message)) return;
+    if (/Budget tâche dépassé/.test(message) && onBudget) {
+      void onBudget().catch(() => undefined);
+      this.store.log("warn", message);
+      return;
+    }
+    if (this.loggedOnce.has(`${key}:${message}`)) return;
+    this.loggedOnce.add(`${key}:${message}`);
+    this.store.log("error", `Autopilote (${key}) : ${message}`);
+  }
+
+  private circuitReason(ap: ReturnType<typeof autopilotSettings>): string | undefined {
+    const since = Date.parse(this.store.data.autopilot?.resumedAt ?? "") || 0;
+    const ended = this.store.data.runs.filter((r) => r.endedAt && Date.parse(r.startedAt) > since);
+    const streak = failureStreak(ended.map((r) => r.result));
+    if (streak >= ap.failureLimit) {
+      return `${streak} runs de suite sans PR : quelque chose bloque, regarde le Journal`;
+    }
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    const from = Math.max(since, midnight.getTime());
+    const cost =
+      this.store.data.runs
+        .filter((r) => Date.parse(r.startedAt) >= from)
+        .reduce((sum, r) => sum + (r.m?.totalCostUsd ?? 0), 0) +
+      Object.values(this.store.data.reviews)
+        .filter((r) => Date.parse(r.at) >= from)
+        .reduce((sum, r) => sum + (r.m?.totalCostUsd ?? 0), 0);
+    if (cost >= ap.dailyBudgetUsd) {
+      return `Budget du jour atteint (${cost.toFixed(2)} $ sur ${ap.dailyBudgetUsd} $)`;
+    }
+    return undefined;
+  }
+
+  // Agent PRs opened against production (old ones, or an agent that ignored --base) are moved
+  // to the base branch so that they follow the same flow.
+  private async retargetPullRequests(): Promise<void> {
+    const base = baseBranch(this.config);
+    if (base === productionBranch(this.config)) return;
+    for (const pr of this.store.live.prs) {
+      if (!agentOfBranch(this.config, pr.headRefName) || pr.baseRefName === base) continue;
+      await this.github
+        .setBase(pr.number, base)
+        .then(() => this.store.log("info", `PR #${pr.number} redirigée vers ${base}`))
+        .catch((e: Error) => this.autoError(`base${pr.number}`, e.message));
+    }
+  }
+
+  // Keeps the base branch in step with production (hotfixes) and keeps one « publish » PR
+  // open while the base branch is ahead. The human merges that one, with a merge commit.
+  private async maintainRelease(): Promise<void> {
+    const base = baseBranch(this.config);
+    const prod = productionBranch(this.config);
+    if (base === prod || this.reviewing !== undefined) return;
+    if (Date.now() - this.lastReleaseCheck < RELEASE_CHECK_MS) return;
+    this.lastReleaseCheck = Date.now();
+    this.reviewing = 0; // the review worktree is used here: reviews wait
+    try {
+      const dir = this.config.reviewWorktree;
+      await ensureWorktree(this.repoDir, dir);
+      await fetchOrigin(dir);
+      if ((await aheadCount(dir, base, prod)) > 0) {
+        const merged = await fastForwardInto(dir, base, prod);
+        if (!merged) {
+          const error = `${base} et ${prod} sont en conflit : à résoudre à la main`;
+          this.release = { ahead: this.release.ahead, error };
+          this.autoError("release-sync", error);
+          return;
+        }
+        this.store.log("info", `${prod} fusionné dans ${base}`);
+      }
+      const ahead = await aheadCount(dir, prod, base);
+      let pr = this.store.live.prs.find((p) => p.headRefName === base && p.baseRefName === prod);
+      if (ahead > 0 && !pr) {
+        await this.github.createPullRequest(
+          prod,
+          base,
+          `Publier ${base} → ${prod}`,
+          `Regroupe les PR mergées dans \`${base}\` (${ahead} commits).\n\n` +
+            `Merger avec **Create a merge commit** (pas « squash »), pour que \`${base}\` reste à jour.`,
+        );
+        await this.refresh();
+        pr = this.store.live.prs.find((p) => p.headRefName === base && p.baseRefName === prod);
+      }
+      this.release = { ahead, pr: pr?.number };
+    } catch (error) {
+      this.autoError("release", (error as Error).message);
+    } finally {
+      this.reviewing = undefined;
+      this.startNextQueuedReview();
+    }
+  }
+
+  private isReleasePr(pr: PullRequest): boolean {
+    const base = baseBranch(this.config);
+    return (
+      base !== productionBranch(this.config) &&
+      pr.headRefName === base &&
+      pr.baseRefName === productionBranch(this.config)
+    );
   }
 
   async stop(agentId: string): Promise<void> {
@@ -630,7 +916,7 @@ export class Orchestrator {
       repo: this.config.repo,
       lastRefresh: live.lastTick,
       activity: live.activity,
-      reviewing: this.reviewing,
+      reviewing: this.reviewing && this.reviewing > 0 ? this.reviewing : undefined,
       // Agent issues only, without their body: enough for the progress board.
       issues: live.issues.flatMap((i) => {
         const agent = i.labels.map((l) => agentLabels.get(l)).find(Boolean);
@@ -645,18 +931,28 @@ export class Orchestrator {
       })),
       defaultReviewer: this.config.defaultReviewer,
       metrics: {
-        totalCostUsd: data.runs.reduce((sum, r) => sum + (r.m?.totalCostUsd ?? 0), 0) +
+        totalCostUsd:
+          data.runs.reduce((sum, r) => sum + (r.m?.totalCostUsd ?? 0), 0) +
           Object.values(data.reviews).reduce((sum, r) => sum + (r.m?.totalCostUsd ?? 0), 0),
         taskBudgetUsd: TASK_BUDGET_USD,
       },
       reviewLines: live.liveLines["review"] ?? [],
       agents,
-      prs: live.prs.map((p) => ({
-        ...p,
-        agent: agentOfBranch(this.config, p.headRefName),
-        issue: this.issueOfBranch(p.headRefName),
-        review: data.reviews[String(p.number)],
-      })),
+      autopilot: {
+        enabled: data.autopilot?.enabled ?? true,
+        pausedReason: data.autopilot?.pausedReason,
+        base: baseBranch(this.config),
+        production: productionBranch(this.config),
+      },
+      release: this.release,
+      prs: live.prs
+        .filter((p) => !this.isReleasePr(p))
+        .map((p) => ({
+          ...p,
+          agent: agentOfBranch(this.config, p.headRefName),
+          issue: this.issueOfBranch(p.headRefName),
+          review: data.reviews[String(p.number)],
+        })),
       attention: live.issues
         .filter(
           (i) =>
