@@ -116,6 +116,20 @@ export function startResumableRun(req: RunRequest): RunHandle {
   let stopped = false;
   const done = (async () => {
     let result = await current.done;
+    // Some models refuse --effort (« --effort is not supported for model … »): the run then
+    // stops at once. Start it again without the option instead of failing the task.
+    if (result.code !== 0 && req.effort && /--effort is not supported/i.test(result.stdout)) {
+      req.onLine("Ce modèle n'accepte pas --effort : nouveau lancement sans cette option");
+      current = run(
+        injectBudgetFlags(
+          req.adapter,
+          req.adapter.launch(req.settings, req.model, req.role, req.prompt),
+          undefined,
+          req.budgetUsd,
+        ),
+      );
+      result = await current.done;
+    }
     let stdout = result.stdout;
     const resume = req.adapter.resume;
     for (let attempt = 1; resume && attempt <= MAX_RESUMES && !stopped; attempt++) {
