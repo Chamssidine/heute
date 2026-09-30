@@ -92,7 +92,7 @@ const MAX_REVIEW_ATTEMPTS = 3;
 // Corrections done locally, on the agent's own commits, before anything is pushed.
 const MAX_LOCAL_FIX_ROUNDS = 2;
 const RELEASE_CHECK_MS = 5 * 60_000;
-const TASK_BUDGET_USD = 1.5;
+const DEFAULT_TASK_BUDGET_USD = 1.5;
 const BUDGET_ERROR = /budget (?:exceeded|reached)|max(?:imum)? budget|BUDGET_EXCEEDED/i;
 
 // End of a run's log: provider errors (quota, rate limit) are printed last.
@@ -448,7 +448,7 @@ export class Orchestrator {
       const issue = this.issueOfBranch(pr.headRefName);
       if (this.taskBudgetExceeded(issue)) {
         const cost = this.taskCostUsd(issue);
-        const reason = `Budget tâche dépassé (${cost.toFixed(2)} $ / ${TASK_BUDGET_USD.toFixed(2)} $)`;
+        const reason = `Budget tâche dépassé (${cost.toFixed(2)} $ / ${this.taskBudget().toFixed(2)} $)`;
         await this.github.comment(
           prNumber,
           `### Relecture automatique : attention humaine requise\n\n- ${reason}`,
@@ -1121,7 +1121,7 @@ export class Orchestrator {
         this.store.pushLine(agentId, line);
       },
       effort: agent.effort ?? "medium",
-      budgetUsd: agent.budgetUsd ?? TASK_BUDGET_USD,
+      budgetUsd: agent.budgetUsd ?? this.taskBudget(),
     });
     this.running.set(agentId, { run, handle });
     this.store.data.runs.push(run);
@@ -1358,16 +1358,21 @@ export class Orchestrator {
     }
   }
 
+  // Spend allowed per task (runs, corrections and reviews together), from config.json.
+  private taskBudget(): number {
+    return this.config.taskBudgetUsd ?? DEFAULT_TASK_BUDGET_USD;
+  }
+
   private assertTaskBudgetAvailable(issue: number | undefined): void {
     if (!this.taskBudgetExceeded(issue)) return;
     const cost = this.taskCostUsd(issue);
     throw new Error(
-      `Budget tâche dépassé (${cost.toFixed(2)} $ / ${TASK_BUDGET_USD.toFixed(2)} $) : attente humaine requise`,
+      `Budget tâche dépassé (${cost.toFixed(2)} $ / ${this.taskBudget().toFixed(2)} $) : attente humaine requise`,
     );
   }
 
   private taskBudgetExceeded(issue: number | undefined): boolean {
-    return issue !== undefined && this.taskCostUsd(issue) >= TASK_BUDGET_USD;
+    return issue !== undefined && this.taskCostUsd(issue) >= this.taskBudget();
   }
 
   private taskCostUsd(issue: number | undefined): number {
@@ -1519,7 +1524,7 @@ export class Orchestrator {
         totalCostUsd:
           data.runs.reduce((sum, r) => sum + (r.m?.totalCostUsd ?? 0), 0) +
           Object.values(data.reviews).reduce((sum, r) => sum + (r.m?.totalCostUsd ?? 0), 0),
-        taskBudgetUsd: TASK_BUDGET_USD,
+        taskBudgetUsd: this.taskBudget(),
       },
       reviewLines: live.liveLines["review"] ?? [],
       agents,
