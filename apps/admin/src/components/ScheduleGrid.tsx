@@ -13,6 +13,7 @@ import {
   type ScheduleEmployee,
   type ScheduleShift,
 } from "../lib/schedule.ts";
+import { useRealtimeRefresh } from "../lib/realtime.ts";
 import { getSupabase } from "../lib/supabase.ts";
 import { de } from "../strings/de.ts";
 import { ShiftDialog, type ShiftTarget } from "./ShiftDialog.tsx";
@@ -112,6 +113,14 @@ export function ScheduleGrid() {
       cancelled = true;
     };
   }, [month, reloadCount]);
+
+  // Relecture silencieuse (sans état « loading ») pour ne pas faire clignoter la grille.
+  useRealtimeRefresh(["shifts"], () => {
+    loadMonth(month).then(
+      (data) => setState({ status: "ready", data }),
+      (error: unknown) => console.error("Dienstplan konnte nicht aktualisiert werden", error),
+    );
+  });
 
   return (
     <Stack>

@@ -9,6 +9,7 @@ import {
   type HousekeepingTask,
   type TaskStatus,
 } from "../lib/housekeeping.ts";
+import { useRealtimeRefresh } from "../lib/realtime.ts";
 import { getSupabase } from "../lib/supabase.ts";
 import { de } from "../strings/de.ts";
 import { EmptyState } from "./ui/EmptyState.tsx";
@@ -85,6 +86,8 @@ export function HousekeepingBoard() {
     setActionError(null);
     void reload(date);
   }, [date, reload]);
+
+  useRealtimeRefresh(["room_tasks"], () => void reload(date));
 
   async function changeStatus(id: string, status: TaskStatus) {
     setActionError(null);
