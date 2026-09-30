@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { chipColors } from "../../../lib/theme/colors.ts";
 import { strings } from "../../../strings/de.ts";
+import { myShiftsFixture } from "../model.ts";
 import { formatShiftDate, formatShiftMonth } from "./formatters.ts";
 
 describe("features/shifts/components (P2-04 [U])", () => {
@@ -53,6 +54,30 @@ describe("features/shifts/components (P2-04 [U])", () => {
     it("formate le libellé d'en-tête selon screens.md §6.5", () => {
       const header = strings.shifts.balanceHeader("184:00", "174:00");
       assert.equal(header, "IST 184:00 / Soll 174:00 Std.");
+    });
+  });
+
+  describe("vues Woche et Monat", () => {
+    it("la vue Woche extrait les 7 premiers jours et Monat tous les jours", () => {
+      const weekDays = myShiftsFixture.days.slice(0, 7);
+      assert.equal(weekDays.length, 7);
+      assert.equal(weekDays[0]?.date, "2026-10-01");
+      assert.equal(weekDays[6]?.date, "2026-10-07");
+
+      const monthDays = myShiftsFixture.days;
+      assert.equal(monthDays.length, 31);
+    });
+
+    it("identifie les dimanches travaillés pour le bonus dimanche", () => {
+      const sundayWork = myShiftsFixture.days.find((d) => d.isSunday && d.istMinutes > 0);
+      assert.ok(sundayWork, "Il doit y avoir au moins un dimanche travaillé");
+      assert.equal(sundayWork.isSunday, true);
+      assert.ok(sundayWork.istMinutes > 0);
+
+      const sundayFree = myShiftsFixture.days.find((d) => d.isSunday && d.istMinutes === 0);
+      assert.ok(sundayFree, "Il doit y avoir au moins un dimanche libre");
+      assert.equal(sundayFree.isSunday, true);
+      assert.equal(sundayFree.istMinutes, 0);
     });
   });
 });
