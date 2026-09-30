@@ -11,11 +11,15 @@ export interface AgentConfig {
   branchPrefix: string;
   brief: string;
   allowedPaths: string[];
+  effort?: "low" | "medium" | "high" | "max";
+  budgetUsd?: number;
 }
 
 export interface ReviewerConfig {
   cli: string;
   model: string;
+  effort?: "low" | "medium" | "high" | "max";
+  budgetUsd?: number;
 }
 
 export interface Config {
