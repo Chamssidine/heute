@@ -1,6 +1,18 @@
 "use client";
 
-import { Alert, Badge, Group, Select, Stack, Table, TextInput, Title } from "@mantine/core";
+import {
+  Alert,
+  Badge,
+  Button,
+  Group,
+  Modal,
+  Select,
+  Stack,
+  Table,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   groupByFloor,
@@ -10,8 +22,11 @@ import {
   type TaskStatus,
 } from "../lib/housekeeping.ts";
 import { useRealtimeRefresh } from "../lib/realtime.ts";
+import { NULL_ARG, roomTaskErrorMessage } from "../lib/roomTaskForm.ts";
 import { getSupabase } from "../lib/supabase.ts";
 import { de } from "../strings/de.ts";
+import { RoomDialog } from "./RoomDialog.tsx";
+import { RoomTaskDialog, type RoomOption } from "./RoomTaskDialog.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { ErrorState } from "./ui/ErrorState.tsx";
 import { LoadingState } from "./ui/LoadingState.tsx";
@@ -25,12 +40,12 @@ const STATUS_TOKENS: Record<TaskStatus, string> = {
 };
 
 type Employee = { id: string; displayName: string };
-type Data = { tasks: HousekeepingTask[]; employees: Employee[] };
+type Data = { tasks: HousekeepingTask[]; employees: Employee[]; rooms: RoomOption[] };
 type LoadState = { status: "loading" } | { status: "error" } | { status: "ready"; data: Data };
 
 async function loadDay(date: string): Promise<Data> {
   const supabase = getSupabase();
-  const [tasks, employees] = await Promise.all([
+  const [tasks, employees, rooms] = await Promise.all([
     supabase
       .from("room_tasks")
       .select("id, task_type, zone, status, assigned_to, rooms(number, floor)")
@@ -41,12 +56,16 @@ async function loadDay(date: string): Promise<Data> {
       .eq("active", true)
       .eq("department", "housekeeping")
       .order("display_name"),
+    supabase.from("rooms").select("id, number").order("number"),
   ]);
   if (tasks.error) {
     throw tasks.error;
   }
   if (employees.error) {
     throw employees.error;
+  }
+  if (rooms.error) {
+    throw rooms.error;
   }
   return {
     tasks: tasks.data.map((t) => ({
@@ -59,6 +78,9 @@ async function loadDay(date: string): Promise<Data> {
       floor: t.rooms?.floor ?? null,
     })),
     employees: employees.data.map((e) => ({ id: e.id, displayName: e.display_name })),
+    rooms: rooms.data
+      .map((r) => ({ id: r.id, number: r.number }))
+      .sort((a, b) => a.number.localeCompare(b.number, "de", { numeric: true })),
   };
 }
 
@@ -71,6 +93,8 @@ export function HousekeepingBoard() {
   const [date, setDate] = useState(() => today());
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [actionError, setActionError] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<"task" | "room" | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const reload = useCallback(async (day: string) => {
     try {
@@ -103,23 +127,82 @@ export function HousekeepingBoard() {
     await reload(date);
   }
 
+  async function assign(id: string, employeeId: string | null) {
+    setActionError(null);
+    const { error } = await getSupabase().rpc("assign_room_task", {
+      p_id: id,
+      p_employee_id: employeeId ?? NULL_ARG,
+    });
+    if (error) {
+      console.error("assign_room_task fehlgeschlagen", error.code);
+      setActionError(
+        error.code === "HT002" || error.code === "HT007"
+          ? roomTaskErrorMessage(error)
+          : de.housekeeping.assignError,
+      );
+      return;
+    }
+    await reload(date);
+  }
+
+  const ready = state.status === "ready" ? state.data : null;
+
   return (
     <Stack>
       <PageHeader
         title={de.nav.housekeeping}
         actions={
-          <TextInput
-            type="date"
-            aria-label={de.housekeeping.date}
-            value={date}
-            onChange={(e) => {
-              if (e.currentTarget.value) {
-                setDate(e.currentTarget.value);
-              }
-            }}
-          />
+          <Group>
+            <TextInput
+              type="date"
+              aria-label={de.housekeeping.date}
+              value={date}
+              onChange={(e) => {
+                if (e.currentTarget.value) {
+                  setDate(e.currentTarget.value);
+                }
+              }}
+            />
+            <Button variant="default" disabled={!ready} onClick={() => setDialog("room")}>
+              {de.housekeeping.addRoom}
+            </Button>
+            <Button disabled={!ready} onClick={() => setDialog("task")}>
+              {de.housekeeping.addTask}
+            </Button>
+          </Group>
         }
       />
+      {ready && dialog === "task" && (
+        <RoomTaskDialog
+          date={date}
+          rooms={ready.rooms}
+          employees={ready.employees}
+          onClose={() => setDialog(null)}
+          onSaved={() => {
+            setDialog(null);
+            void reload(date);
+          }}
+        />
+      )}
+      {dialog === "room" && (
+        <RoomDialog
+          onClose={() => setDialog(null)}
+          onSaved={() => {
+            setDialog(null);
+            void reload(date);
+          }}
+        />
+      )}
+      {deleting && (
+        <DeleteTaskDialog
+          id={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => {
+            setDeleting(null);
+            void reload(date);
+          }}
+        />
+      )}
       {actionError && (
         <Alert color="danger" role="alert">
           {actionError}
@@ -131,18 +214,89 @@ export function HousekeepingBoard() {
         (state.data.tasks.length === 0 ? (
           <EmptyState title={de.housekeeping.empty} />
         ) : (
-          <Floors data={state.data} onStatus={changeStatus} />
+          <Floors
+            data={state.data}
+            onStatus={changeStatus}
+            onAssign={assign}
+            onDelete={setDeleting}
+          />
         ))}
     </Stack>
+  );
+}
+
+function DeleteTaskDialog({
+  id,
+  onClose,
+  onDeleted,
+}: {
+  id: string;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const d = de.housekeeping.dialog;
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function remove() {
+    if (reason.trim() === "") {
+      setError(d.reasonRequired);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const { error: dbError } = await getSupabase().rpc("delete_room_task", {
+      p_id: id,
+      p_reason: reason.trim(),
+    });
+    setBusy(false);
+    if (dbError) {
+      console.error("delete_room_task fehlgeschlagen", dbError.code);
+      setError(roomTaskErrorMessage(dbError));
+      return;
+    }
+    onDeleted();
+  }
+
+  return (
+    <Modal opened onClose={onClose} title={d.confirmTitle}>
+      <Stack>
+        <Text size="sm">{d.confirmText}</Text>
+        <TextInput
+          label={d.reason}
+          required
+          value={reason}
+          onChange={(e) => setReason(e.currentTarget.value)}
+        />
+        {error && (
+          <Alert color="danger" role="alert">
+            {error}
+          </Alert>
+        )}
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose}>
+            {d.cancel}
+          </Button>
+          <Button color="danger" loading={busy} onClick={() => void remove()}>
+            {d.confirmDelete}
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
   );
 }
 
 function Floors({
   data,
   onStatus,
+  onAssign,
+  onDelete,
 }: {
   data: Data;
   onStatus: (id: string, status: TaskStatus) => Promise<void>;
+  onAssign: (id: string, employeeId: string | null) => Promise<void>;
+  onDelete: (id: string) => void;
 }) {
   const groups = useMemo(() => groupByFloor(data.tasks), [data.tasks]);
   const options = data.employees.map((e) => ({ value: e.id, label: e.displayName }));
@@ -169,6 +323,7 @@ function Floors({
                 <Table.Th>{de.housekeeping.zone}</Table.Th>
                 <Table.Th>{de.housekeeping.assignee}</Table.Th>
                 <Table.Th>{de.housekeeping.status}</Table.Th>
+                <Table.Th />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -178,15 +333,14 @@ function Floors({
                   <Table.Td>{de.housekeeping.types[t.taskType]}</Table.Td>
                   <Table.Td>{t.zone ?? "–"}</Table.Td>
                   <Table.Td>
-                    {/* Pas de RPC ni de policy d'écriture pour assigned_to : désactivé (issue « contrat »). */}
                     <Select
                       w={192}
                       data={options}
                       value={t.assignedTo}
+                      clearable
                       placeholder={de.housekeeping.unassigned}
                       aria-label={de.housekeeping.assignee}
-                      title={de.housekeeping.assignHint}
-                      disabled
+                      onChange={(value) => void onAssign(t.id, value)}
                     />
                   </Table.Td>
                   <Table.Td>
@@ -208,6 +362,16 @@ function Floors({
                         }}
                       />
                     </Group>
+                  </Table.Td>
+                  <Table.Td>
+                    <Button
+                      variant="subtle"
+                      color="danger"
+                      size="xs"
+                      onClick={() => onDelete(t.id)}
+                    >
+                      {de.housekeeping.deleteTask}
+                    </Button>
                   </Table.Td>
                 </Table.Tr>
               ))}
