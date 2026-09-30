@@ -1,8 +1,9 @@
-import type { ShiftInput } from "@heute/domain";
+import type { Database, ShiftInput } from "@heute/domain";
 import type { ChangeIndicator } from "../../lib/query/lastSeen/index.ts";
 import { strings } from "../../strings/index.ts";
 import type { AppRole, Department } from "../auth/model.ts";
 import {
+  calculateKitchenTotals,
   formatDietsSummary,
   kitchenDayFixture,
   type KitchenDay,
@@ -454,6 +455,71 @@ export function createTodayMenu(kitchenDay?: KitchenDay | null): TodayMenu {
     noDinner: kitchenDay?.noDinner ?? abend == null,
     raw: menu,
     changed: Boolean(mittag?.changed) || Boolean(abend?.changed),
+  };
+}
+
+type ShiftRow = Database["public"]["Tables"]["shifts"]["Row"];
+type MenuItemRow = Database["public"]["Tables"]["menu_items"]["Row"];
+export type MealTotalsRow = Database["public"]["Functions"]["meal_totals"]["Returns"][number];
+
+/**
+ * Ligne `shifts` → service affiché sur la carte « Mein Dienst ».
+ */
+export function shiftRowToShiftDay(
+  row: Pick<ShiftRow, "date" | "type" | "start1" | "end1" | "start2" | "end2" | "break_min">,
+): TodayShift {
+  return toShiftDay({
+    date: row.date,
+    type: row.type,
+    start1: row.start1,
+    end1: row.end1,
+    start2: row.start2,
+    end2: row.end2,
+    break_min: row.break_min,
+  });
+}
+
+/**
+ * Lignes `meal_totals` + `menu_items` → KitchenDay. Les allergies ne sont que comptées :
+ * aucun détail d'allergie ne transite par ce modèle.
+ */
+export function rowsToKitchenDay(
+  date: string,
+  totalsRows: readonly MealTotalsRow[],
+  menuRows: readonly MenuItemRow[],
+  updatedAt?: string,
+): KitchenDay {
+  const totals = calculateKitchenTotals([
+    {
+      matchcode: "",
+      meals: totalsRows
+        .filter((r) => r.date === date)
+        .map((r) => ({
+          meal: r.meal,
+          count: r.total,
+          veg: r.veg,
+          vegan: r.vegan,
+          mos: r.mos,
+          al: r.allergies,
+        })),
+    },
+  ]);
+
+  const toMenuItem = (meal: "mittag" | "abend"): MenuItem | null => {
+    const row = menuRows.find((r) => r.date === date && r.meal === meal);
+    return row
+      ? { meal, mainDish: row.main_dish, vegVariant: row.veg_variant, dessert: row.dessert }
+      : null;
+  };
+
+  return {
+    date,
+    totals,
+    groups: [],
+    menu: { mittag: toMenuItem("mittag"), abend: toMenuItem("abend") },
+    noLunch: totals.mittag.total === 0,
+    noDinner: totals.abend.total === 0 && totals.grill.total === 0,
+    updatedAt,
   };
 }
 
