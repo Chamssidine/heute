@@ -52,3 +52,7 @@ test("antigravity: a resume continues the same conversation", () => {
   assert.equal(args[args.indexOf("-p") + 1], "continue");
   assert.ok(args.includes("accept-edits"));
 });
+
+test("antigravity: passes the effort but no budget flag (agy has none)", () => {
+  assert.deepEqual(antigravity.limitArgs?.("medium", 1.5), ["--effort", "medium"]);
+});

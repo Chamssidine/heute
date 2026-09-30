@@ -68,6 +68,10 @@ export const claude: CliAdapter = {
       stdinPrompt: prompt,
     };
   },
+  limitArgs: (effort, budgetUsd) => [
+    ...(effort ? ["--effort", effort] : []),
+    ...(budgetUsd ? ["--max-budget-usd", String(budgetUsd)] : []),
+  ],
   summarize(line) {
     const e = parseJson(line);
     if (!e) return line.trim() ? line.trim().slice(0, 300) : undefined;

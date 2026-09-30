@@ -38,6 +38,8 @@ export interface CliAdapter {
   launch(settings: CliSettings, model: string, role: Role, prompt: string): LaunchSpec;
   // One output line → one short readable line for the live log (or nothing).
   summarize(line: string): string | undefined;
+  // Effort and spend limits, in this CLI's own flags (nothing when it has none).
+  limitArgs?(effort: string | undefined, budgetUsd: number | undefined): string[];
   // Whole stdout of a finished run → the final text answer.
   finalText(stdout: string): string | undefined;
   // Whole stdout of a finished run → usage metrics.

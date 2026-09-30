@@ -62,6 +62,7 @@ export const antigravity: CliAdapter = {
       ]);
     },
   },
+  limitArgs: (effort) => (effort ? ["--effort", effort] : []),
   summarize(line) {
     const e = parseJson(line);
     if (!e) return line.trim() ? line.trim().slice(0, 300) : undefined;
