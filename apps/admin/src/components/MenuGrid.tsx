@@ -3,11 +3,13 @@
 import { Button, Group, Stack, Table, Text, TextInput, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 import {
+  copiedDayCount,
   currentWeekStart,
   isRlsDenied,
   menuKey,
   menuRow,
   MENU_MEALS,
+  planMenuCopy,
   shiftWeek,
   weekDates,
   type MenuDraft,
@@ -28,6 +30,9 @@ function berlinToday(): string {
 
 type Menu = Map<string, MenuDraft>;
 type LoadState = { status: "loading" } | { status: "error" } | { status: "ready"; menu: Menu };
+
+type CopyState =
+  { status: "idle" | "confirm" | "busy" } | { status: "message"; text: string; error: boolean };
 
 const EMPTY_DRAFT: MenuDraft = { mainDish: "", vegVariant: "", dessert: "" };
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"] as const;
@@ -60,6 +65,8 @@ async function loadWeek(weekStart: string): Promise<Menu> {
 export function MenuGrid() {
   const [weekStart, setWeekStart] = useState(() => currentWeekStart());
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [copy, setCopy] = useState<CopyState>({ status: "idle" });
+  const [reloadCount, setReloadCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,7 +87,47 @@ export function MenuGrid() {
     return () => {
       cancelled = true;
     };
+  }, [weekStart, reloadCount]);
+
+  useEffect(() => {
+    setCopy({ status: "idle" });
   }, [weekStart]);
+
+  async function copyPreviousWeek() {
+    if (state.status !== "ready") {
+      return;
+    }
+    setCopy({ status: "busy" });
+    try {
+      const source = await loadWeek(shiftWeek(weekStart, -1));
+      const plan = planMenuCopy(source, state.menu, weekStart);
+      if (plan.rows.length === 0) {
+        setCopy({ status: "message", text: de.menu.copyNothing, error: plan.skipped === 0 });
+        return;
+      }
+      const { error } = await getSupabase()
+        .from("menu_items")
+        .upsert(plan.rows, { onConflict: "date,meal", ignoreDuplicates: true });
+      if (error) {
+        console.error("Vorwoche konnte nicht kopiert werden", error);
+        setCopy({
+          status: "message",
+          text: isRlsDenied(error) ? de.menu.forbidden : de.menu.saveError,
+          error: true,
+        });
+        return;
+      }
+      setCopy({
+        status: "message",
+        text: de.menu.copyDone(copiedDayCount(plan.rows), plan.skipped),
+        error: false,
+      });
+      setReloadCount((n) => n + 1);
+    } catch (error) {
+      console.error("Vorwoche konnte nicht geladen werden", error);
+      setCopy({ status: "message", text: de.menu.copyLoadError, error: true });
+    }
+  }
 
   const dates = weekDates(weekStart);
   const today = berlinToday();
@@ -106,7 +153,32 @@ export function MenuGrid() {
         >
           ▶
         </Button>
+        {copy.status === "confirm" ? (
+          <Group gap="xs">
+            <Text size="sm">{de.menu.copyConfirm}</Text>
+            <Button size="compact-sm" onClick={() => void copyPreviousWeek()}>
+              {de.menu.copyConfirmYes}
+            </Button>
+            <Button size="compact-sm" variant="default" onClick={() => setCopy({ status: "idle" })}>
+              {de.menu.copyCancel}
+            </Button>
+          </Group>
+        ) : (
+          <Button
+            variant="default"
+            loading={copy.status === "busy"}
+            disabled={state.status !== "ready"}
+            onClick={() => setCopy({ status: "confirm" })}
+          >
+            {de.menu.copyPrevious}
+          </Button>
+        )}
       </Group>
+      {copy.status === "message" && (
+        <Text size="sm" c={copy.error ? "red" : undefined} role={copy.error ? "alert" : "status"}>
+          {copy.text}
+        </Text>
+      )}
       {state.status === "loading" && <LoadingState label={de.loading} rows={7} />}
       {state.status === "error" && <ErrorState message={de.menu.loadError} />}
       {state.status === "ready" && (

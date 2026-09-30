@@ -28,7 +28,11 @@ export const NAV_ITEMS = [
   { href: "/speiseplan", label: de.nav.menu },
   { href: "/housekeeping", label: de.nav.housekeeping },
   { href: "/aenderungsprotokoll", label: de.nav.auditLog },
+  { href: "/mitarbeiter", label: de.nav.employees },
 ] as const;
+
+// Seule la page Mitarbeiter est réservée à l'admin (Küchenleitung exclue).
+const ADMIN_ONLY: readonly string[] = ["/mitarbeiter"];
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const { state, signOut } = useAuth();
@@ -105,7 +109,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </Title>
         </Group>
         <Stack component="nav" aria-label="Navigation" gap={4} mt="xs" style={{ flex: 1 }}>
-          {NAV_ITEMS.map((item) => (
+          {NAV_ITEMS.filter(
+            (item) => state.role === "admin" || !ADMIN_ONLY.includes(item.href),
+          ).map((item) => (
             <NavLink
               key={item.href}
               component={Link}
@@ -208,6 +214,12 @@ const NAV_ICONS: Record<(typeof NAV_ITEMS)[number]["href"], ReactNode> = {
   "/housekeeping": (
     <Icon>
       <path d="M3 21V9l9-6 9 6v12M9 21v-7h6v7" />
+    </Icon>
+  ),
+  "/mitarbeiter": (
+    <Icon>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1" />
     </Icon>
   ),
   "/aenderungsprotokoll": (

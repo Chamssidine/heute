@@ -154,6 +154,7 @@ export function ScheduleGrid() {
         <ShiftDialog
           target={target}
           onClose={() => setTarget(null)}
+          onCopied={() => setReloadCount((n) => n + 1)}
           onSaved={() => {
             setTarget(null);
             setReloadCount((n) => n + 1);
