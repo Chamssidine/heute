@@ -213,16 +213,17 @@ export function formatDietsSummary(diets: DietCounts, allergies?: Record<string,
 /**
  * Construit un objet KitchenDay cohérent.
  */
-function createKitchenDay(params: {
+export function createKitchenDay(params: {
   date: string;
   groups: readonly KitchenGroupDetail[];
   menu: KitchenDayMenu;
   noLunch?: boolean;
   noDinner?: boolean;
   updatedAt?: string;
+  totals?: KitchenTotals;
   totalsChanges?: Partial<Record<MealType, { updated_at?: string; previous?: MealTotalPrevious }>>;
 }): KitchenDay {
-  const totals = calculateKitchenTotals(params.groups);
+  const totals = params.totals ?? calculateKitchenTotals(params.groups);
 
   if (params.totalsChanges) {
     for (const [meal, change] of Object.entries(params.totalsChanges) as [
@@ -248,6 +249,142 @@ function createKitchenDay(params: {
     noDinner,
     updatedAt: params.updatedAt,
   };
+}
+
+type MealCountRow = Database["public"]["Tables"]["meal_counts"]["Row"];
+type MenuItemRow = Database["public"]["Tables"]["menu_items"]["Row"];
+type MealTotalsRow = Database["public"]["Functions"]["meal_totals"]["Returns"][number];
+
+/**
+ * Ligne de `meal_counts` avec la réservation jointe (PostgREST renvoie un objet ou un tableau).
+ */
+export type KitchenMealCountRow = Pick<
+  MealCountRow,
+  "meal" | "total" | "veg" | "vegan" | "mos" | "note" | "allergies"
+> & {
+  bookings: { matchcode: string } | { matchcode: string }[] | null;
+};
+
+export type KitchenMenuItemRow = Pick<
+  MenuItemRow,
+  "meal" | "main_dish" | "veg_variant" | "dessert"
+>;
+
+export type KitchenTotalsRow = Pick<
+  MealTotalsRow,
+  "meal" | "total" | "veg" | "vegan" | "mos" | "allergies"
+>;
+
+/**
+ * `allergies` est un jsonb { allergène: nombre } : AL = somme des valeurs (comme `meal_totals`).
+ * Les valeurs invalides sont ignorées ; aucun détail n'est journalisé.
+ */
+function parseAllergies(value: MealCountRow["allergies"]): Record<string, number> {
+  const result: Record<string, number> = {};
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return result;
+  }
+  for (const [key, count] of Object.entries(value)) {
+    if (typeof count === "number" && Number.isInteger(count) && count > 0) {
+      result[key] = count;
+    }
+  }
+  return result;
+}
+
+function toMenuItem(
+  rows: readonly KitchenMenuItemRow[],
+  meal: "mittag" | "abend",
+): MenuItem | null {
+  const row = rows.find((r) => r.meal === meal);
+  return row
+    ? { meal, mainDish: row.main_dish, vegVariant: row.veg_variant, dessert: row.dessert }
+    : null;
+}
+
+/**
+ * Transforme les lignes de la base en KitchenDay. Les totaux viennent de `meal_totals`
+ * (source identique à l'admin) ; sans ligne, ils sont recalculés depuis les groupes.
+ * Les repas à 0 sont ignorés pour ne pas afficher de ligne vide.
+ */
+export function buildKitchenDay(params: {
+  date: string;
+  mealCounts: readonly KitchenMealCountRow[];
+  menuItems: readonly KitchenMenuItemRow[];
+  totals: readonly KitchenTotalsRow[];
+  updatedAt?: string;
+}): KitchenDay {
+  const byMatchcode = new Map<string, KitchenGroupMeal[]>();
+  for (const row of params.mealCounts) {
+    if (row.total <= 0) continue;
+    const booking = Array.isArray(row.bookings) ? row.bookings[0] : row.bookings;
+    const matchcode = booking?.matchcode ?? "";
+    const allergies = parseAllergies(row.allergies);
+    const meal: KitchenGroupMeal = {
+      meal: row.meal,
+      count: row.total,
+      veg: row.veg,
+      vegan: row.vegan,
+      mos: row.mos,
+      al: Object.values(allergies).reduce((sum, n) => sum + n, 0),
+      note: row.note,
+    };
+    if (Object.keys(allergies).length > 0) meal.allergies = allergies;
+    byMatchcode.set(matchcode, [...(byMatchcode.get(matchcode) ?? []), meal]);
+  }
+
+  const order = (m: KitchenGroupMeal) => MEAL_TYPES.indexOf(m.meal);
+  const groups: KitchenGroupDetail[] = [...byMatchcode.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, "de"))
+    .map(([matchcode, meals]) => ({ matchcode, meals: meals.sort((a, b) => order(a) - order(b)) }));
+
+  let totals: KitchenTotals | undefined;
+  if (params.totals.length > 0) {
+    totals = calculateKitchenTotals([]);
+    for (const row of params.totals) {
+      totals[row.meal] = {
+        meal: row.meal,
+        total: row.total,
+        veg: row.veg,
+        vegan: row.vegan,
+        mos: row.mos,
+        al: row.allergies,
+      };
+    }
+  }
+
+  return createKitchenDay({
+    date: params.date,
+    groups,
+    totals,
+    menu: {
+      mittag: toMenuItem(params.menuItems, "mittag"),
+      abend: toMenuItem(params.menuItems, "abend"),
+    },
+    updatedAt: params.updatedAt,
+  });
+}
+
+/**
+ * Heure « Stand HH:MM » (Europe/Berlin) d'un instant en millisecondes.
+ */
+export function formatStand(timestampMs: number): string {
+  return new Intl.DateTimeFormat("de-DE", {
+    timeZone: "Europe/Berlin",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(timestampMs));
+}
+
+/**
+ * Une journée sans aucun repas ni menu est « vide » (écran empty).
+ */
+export function isKitchenDayEmpty(day: KitchenDay): boolean {
+  const hasMeals = MEAL_TYPES.some((m) => day.totals[m].total > 0);
+  return (
+    !hasMeals && day.groups.length === 0 && day.menu.mittag === null && day.menu.abend === null
+  );
 }
 
 /**
