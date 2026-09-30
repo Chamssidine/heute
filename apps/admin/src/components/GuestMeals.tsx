@@ -23,6 +23,7 @@ import {
   type MealFormValues,
   type PageMeal,
 } from "../lib/meals.ts";
+import { useRealtimeRefresh } from "../lib/realtime.ts";
 import { getSupabase } from "../lib/supabase.ts";
 import { de } from "../strings/de.ts";
 
@@ -112,6 +113,8 @@ export function GuestMeals() {
       cancelled = true;
     };
   }, [date, reload]);
+
+  useRealtimeRefresh(["bookings", "meal_counts"], () => void reload(date, () => false));
 
   return (
     <Stack>
