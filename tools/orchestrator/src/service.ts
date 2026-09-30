@@ -149,6 +149,8 @@ export class Orchestrator {
   private readonly reviewQueue: { pr: number; reviewer: string }[] = [];
   private readonly interrupted: RunRecord[] = [];
   private ticking = false;
+  // Models each CLI offers: asked to the CLI when it can tell, else declared in config.json.
+  private readonly models = new Map<string, { id: string; label: string }[]>();
   // Live proof of life of a running agent: tool steps so far, files changed, commits made.
   private readonly steps = new Map<string, number>();
   private readonly work = new Map<string, { changed: number; commits: number }>();
@@ -705,6 +707,7 @@ export class Orchestrator {
       clis: this.config.clis,
       repoDir: this.repoDir,
       briefExists: (path) => existsSync(join(this.repoDir, path)),
+      models: this.models.get(spec.cli)?.map((m) => m.id),
     });
     if ("errors" in built) throw new Error(built.errors.join(" · "));
     this.config.agents[built.id] = built.agent;
@@ -786,6 +789,23 @@ export class Orchestrator {
     this.store.log("warn", `Agent ${id} supprimé : ses tâches restent à réassigner`);
     this.store.save();
     await this.refresh();
+  }
+
+  async loadModels(): Promise<void> {
+    for (const [id, settings] of Object.entries(this.config.clis)) {
+      const adapter = adapterFor(settings.adapter);
+      let list = (settings.models ?? []).map((m) => ({ id: m.id, label: m.label ?? m.id }));
+      try {
+        if (adapter.listModels) list = await adapter.listModels(settings);
+      } catch (error) {
+        this.store.log(
+          "warn",
+          `Modèles de ${id} : ${(error as Error).message} (liste déclarée utilisée)`,
+        );
+      }
+      this.models.set(id, list);
+    }
+    this.store.emit("change");
   }
 
   private listBriefs(): string[] {
@@ -1562,6 +1582,7 @@ export class Orchestrator {
       agents,
       status: this.statusView(),
       briefs: this.listBriefs(),
+      models: Object.fromEntries(this.models),
       clis: Object.entries(this.config.clis).map(([id, c]) => ({ id, adapter: c.adapter })),
       autopilot: {
         enabled: data.autopilot?.enabled ?? true,

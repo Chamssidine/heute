@@ -8,6 +8,8 @@ export interface CliSettings {
   // Extra arguments per role, appended after the adapter's own arguments.
   // They let the user tighten or loosen permissions without touching code.
   extraArgs?: Partial<Record<Role, string[]>>;
+  // Models this CLI may run, when it cannot list them itself (declared once in config.json).
+  models?: { id: string; label?: string }[];
 }
 
 export interface LaunchSpec {
@@ -36,6 +38,8 @@ export interface CliAdapter {
   // the end of the run is detected from GitHub.
   readonly mode: "process" | "manual";
   launch(settings: CliSettings, model: string, role: Role, prompt: string): LaunchSpec;
+  // CLIs that can tell which models they offer (agy does): asked instead of the declared list.
+  listModels?(settings: CliSettings): Promise<{ id: string; label: string }[]>;
   // One output line → one short readable line for the live log (or nothing).
   summarize(line: string): string | undefined;
   // Effort and spend limits, in this CLI's own flags (nothing when it has none).

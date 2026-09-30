@@ -18,7 +18,25 @@
   "clis": {
     "claude": {
       "adapter": "claude",
-      "command": "C:\\Users\\chams\\.local\\bin\\claude.exe"
+      "command": "C:\\Users\\chams\\.local\\bin\\claude.exe",
+      "models": [
+        {
+          "id": "claude-sonnet-5-5",
+          "label": "Claude Sonnet 5.5"
+        },
+        {
+          "id": "claude-opus-5-5",
+          "label": "Claude Opus 5.5"
+        },
+        {
+          "id": "claude-fable-5-1",
+          "label": "Claude Fable 5.1"
+        },
+        {
+          "id": "claude-haiku-4-5-20251001",
+          "label": "Claude Haiku 4.5"
+        }
+      ]
     },
     "gemini": {
       "adapter": "gemini",
@@ -34,7 +52,13 @@
     },
     "codex": {
       "adapter": "codex",
-      "command": "C:\\Users\\chams\\AppData\\Local\\OpenAI\\Codex\\bin\\fd4c151a749f3ab4\\codex.exe"
+      "command": "C:\\Users\\chams\\AppData\\Local\\OpenAI\\Codex\\bin\\fd4c151a749f3ab4\\codex.exe",
+      "models": [
+        {
+          "id": "gpt-5-codex",
+          "label": "GPT-5 Codex"
+        }
+      ]
     }
   },
   "reviewers": {

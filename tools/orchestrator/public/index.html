@@ -2109,7 +2109,21 @@
         const id = h("input", { placeholder: "U2", maxlength: "6", autocomplete: "off" });
         const name = h("input", { placeholder: "Mobile UI 2", maxlength: "40" });
         const cli = h("select", {}, ...state.clis.map((c) => h("option", { value: c.id }, c.id)));
-        const model = h("input", { placeholder: "claude-sonnet-5-5" });
+        // The models of the chosen CLI, as a list: nothing can be typed that does not exist.
+        const model = h("select", {});
+        const fillModels = (selected) => {
+          const list = state.models?.[cli.value] ?? [];
+          model.replaceChildren(
+            ...(list.length
+              ? list.map((m) =>
+                  h("option", { value: m.id }, m.label === m.id ? m.id : `${m.label} · ${m.id}`),
+                )
+              : [h("option", { value: "" }, "Aucun modèle proposé par cette CLI")]),
+          );
+          if (selected && list.some((m) => m.id === selected)) model.value = selected;
+        };
+        cli.addEventListener("change", () => fillModels());
+        fillModels();
         const brief = h("select", {}, ...state.briefs.map((b) => h("option", { value: b }, b)));
         const paths = h("textarea", {
           "aria-label": "Chemins autorisés",
@@ -2158,7 +2172,7 @@
           const t = agentById(templateSelect.value);
           if (!t) return;
           cli.value = t.cli;
-          model.value = t.model;
+          fillModels(t.model);
           brief.value = t.brief;
           paths.value = t.allowedPaths.join("\n");
           refreshSuggestions();

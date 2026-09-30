@@ -67,3 +67,15 @@ test("agent creation: label, branch prefix and folder cannot collide with anothe
   assert.ok("errors" in built);
   assert.equal(built.errors.length, 3);
 });
+
+test("agent creation: the model must be one the CLI offers", () => {
+  const listed = { ...ctx, models: ["claude-sonnet-5-5", "claude-opus-5-5"] };
+  assert.ok("agent" in buildAgent({ ...spec, model: "claude-opus-5-5" }, listed));
+  const refused = buildAgent({ ...spec, model: "gemini" }, listed);
+  assert.ok("errors" in refused);
+  assert.match(refused.errors.join(), /non proposé/);
+  assert.ok(
+    "agent" in buildAgent({ ...spec, model: "tout" }, ctx),
+    "no list known: nothing to check against",
+  );
+});
