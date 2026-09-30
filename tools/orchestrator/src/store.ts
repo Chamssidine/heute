@@ -68,6 +68,8 @@ export interface PersistedState {
   events: EventRecord[];
   // Per agent: when the LLM provider's quota resets (ISO date). Kept across restarts.
   quotaUntil?: Record<AgentId, string>;
+  // Autopilot on/off (the human's switch) and why it stopped itself, if it did.
+  autopilot?: { enabled: boolean; pausedReason?: string; resumedAt?: string };
 }
 
 // Volatile data (GitHub snapshot, live log lines) is kept in memory only.

@@ -22,8 +22,29 @@ export interface ReviewerConfig {
   budgetUsd?: number;
 }
 
+export interface AutopilotConfig {
+  // Each switch can be turned off in config.json to get back the click-by-click workflow.
+  launchAgents: boolean;
+  autoFix: boolean;
+  // Runs in a row that end without a PR before the autopilot stops itself.
+  failureLimit: number;
+  dailyBudgetUsd: number;
+}
+
+export const DEFAULT_AUTOPILOT: AutopilotConfig = {
+  launchAgents: true,
+  autoFix: true,
+  failureLimit: 4,
+  dailyBudgetUsd: 25,
+};
+
 export interface Config {
   repo: string;
+  // Agents branch from and open their PRs against `baseBranch`; only the human merges it
+  // into `productionBranch`. With no `baseBranch`, everything goes straight to production.
+  baseBranch?: string;
+  productionBranch?: string;
+  autopilot?: Partial<AutopilotConfig>;
   port: number;
   refreshSeconds: number;
   runTimeoutMinutes: number;
@@ -59,4 +80,16 @@ export function agentOfBranch(config: Config, branch: string): string | undefine
   return Object.entries(config.agents).find(([, a]) =>
     branch.startsWith(`${a.branchPrefix}/`),
   )?.[0];
+}
+
+export function baseBranch(config: Config): string {
+  return config.baseBranch ?? config.productionBranch ?? "main";
+}
+
+export function productionBranch(config: Config): string {
+  return config.productionBranch ?? "main";
+}
+
+export function autopilotSettings(config: Config): AutopilotConfig {
+  return { ...DEFAULT_AUTOPILOT, ...config.autopilot };
 }

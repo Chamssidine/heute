@@ -28,9 +28,16 @@ await orchestrator.refresh();
 // ORCHESTRATOR_PORT lets a second instance run next to the usual one (e.g. to test a change).
 startServer(Number(process.env["ORCHESTRATOR_PORT"] ?? config.port), orchestrator, store);
 
-// Refreshing only reads GitHub: nothing is launched or merged without a click.
-setInterval(() => {
-  orchestrator
-    .refresh()
-    .catch((error: Error) => store.log("warn", `Actualisation : ${error.message}`));
-}, config.refreshSeconds * 1000);
+// Every tick reads GitHub, then the autopilot reviews, corrects and launches what is due.
+// It never merges: merging stays a click (see the autopilot switch in the dashboard).
+async function tick(): Promise<void> {
+  try {
+    await orchestrator.refresh();
+  } catch (error) {
+    store.log("warn", `Actualisation : ${(error as Error).message}`);
+    return;
+  }
+  await orchestrator.autopilotTick();
+}
+void orchestrator.autopilotTick();
+setInterval(() => void tick(), config.refreshSeconds * 1000);
