@@ -765,6 +765,12 @@ export class Orchestrator {
     const { created: _created, ...rest } = built.agent;
     void _created;
     const next: AgentConfig = { ...rest, ...(cur.created ? { created: true } : {}) };
+    // A quota belongs to one provider: a new CLI or model starts with a clean slate.
+    if ((cur.cli !== next.cli || cur.model !== next.model) && this.store.data.quotaUntil?.[id]) {
+      const { [id]: _quota, ...rest } = this.store.data.quotaUntil;
+      void _quota;
+      this.store.data.quotaUntil = rest;
+    }
     this.config.agents[id] = next;
     (this.store.data.agentOverrides ??= {})[id] = next;
     if (cur.created) (this.store.data.customAgents ??= {})[id] = next;
