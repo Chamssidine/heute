@@ -195,7 +195,10 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "audit_row_change":
+            "assign_room_task":
+{ Args: { "p_employee_id": string,"p_id": string }; Returns: undefined
+                           },
+"audit_row_change":
 { Args: Record<PropertyKey, never>; Returns: unknown
                            },
 "can_write_shifts_of":
@@ -207,8 +210,14 @@ isOneToOne: false
 "current_employee_id":
 { Args: Record<PropertyKey, never>; Returns: string
                            },
+"delete_room_task":
+{ Args: { "p_id": string,"p_reason": string }; Returns: undefined
+                           },
 "delete_shift":
 { Args: { "p_id": string,"p_reason": string }; Returns: undefined
+                           },
+"is_assignable_housekeeper":
+{ Args: { "p_employee_id": string }; Returns: boolean
                            },
 "is_valid_allergies":
 { Args: { "a": Json }; Returns: boolean
@@ -218,6 +227,9 @@ isOneToOne: false
                            },
 "save_employee":
 { Args: { "p_contract": string,"p_department": Database["public"]['Enums']["department"],"p_display_name": string,"p_id": string,"p_reason": string,"p_role": Database["public"]['Enums']["app_role"],"p_soll_min_day": number,"p_soll_min_month": number }; Returns: string
+                           },
+"save_room_task":
+{ Args: { "p_assigned_to": string,"p_date": string,"p_id": string,"p_note": string,"p_reason": string,"p_room_id": string,"p_task_type": Database["public"]['Enums']["task_type"],"p_zone": string }; Returns: string
                            },
 "save_shift":
 { Args: { "p_break_min": number,"p_date": string,"p_employee_id": string,"p_end1": number,"p_end2": number,"p_note": string,"p_reason": string,"p_start1": number,"p_start2": number,"p_type": Database["public"]['Enums']["shift_type"] }; Returns: string
