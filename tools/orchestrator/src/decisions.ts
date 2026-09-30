@@ -176,3 +176,22 @@ export function quotaResetDelayMs(logTail: string): number | undefined {
   const delay = ((hours ?? 0) * 3600 + (minutes ?? 0) * 60 + (seconds ?? 0)) * 1000;
   return delay > 0 ? delay : DEFAULT_QUOTA_WAIT_MS;
 }
+
+// Pick the best reviewer based on diff complexity and PR type.
+// - Small diffs (<80 lines) → haiku (fast, cheap)
+// - Contract changes or security concerns → opus (most careful)
+// - Fix round >= 2 → opus (harder problems)
+// - Default → sonnet (good balance)
+export interface ReviewerPickInput {
+  files: readonly string[];
+  diffLines: number;
+  contractPaths: readonly string[];
+  fixRounds: number;
+}
+
+export function pickReviewerId(input: ReviewerPickInput): "claude" | "codex" | "gemini" {
+  const hasContract = input.files.some((f) => matchesAny(f, input.contractPaths));
+  if (hasContract || input.fixRounds >= 2) return "claude"; // opus
+  if (input.diffLines < 80) return "codex"; // haiku (or similar small model if available)
+  return "claude"; // sonnet (default)
+}

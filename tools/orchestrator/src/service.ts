@@ -2,7 +2,7 @@
 // dashboard. The service only prepares, runs what was asked, and reviews read-only.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { adapterFor, type CliAdapter } from "./adapters/index.ts";
+import { adapterFor } from "./adapters/index.ts";
 import { agentOfBranch, type Config } from "./config.ts";
 
 const GENERATED_FILE_PATTERNS = [
@@ -23,7 +23,6 @@ function filterDiff(rawDiff: string): string {
       inExcludedFile = !!filepath && GENERATED_FILE_PATTERNS.some((p) => filepath.includes(p));
 
       if (inExcludedFile) {
-        // Add a summary line instead
         const path = filepath || "file";
         result.push(`--- ${path}: (fichier généré, exclu du diff)`);
       } else {
@@ -39,6 +38,7 @@ function filterDiff(rawDiff: string): string {
 import {
   isManualRunDone,
   nextIssue,
+  pickReviewerId,
   queueFor,
   quotaResetDelayMs,
   STATUS_LABELS,
@@ -240,13 +240,27 @@ export class Orchestrator {
       await ensureWorktree(this.repoDir, this.config.reviewWorktree);
       await this.github.setLabels(prNumber, [STATUS_LABELS.review], this.labelsOn(pr));
       const issue = this.issueOfBranch(pr.headRefName);
+      const files = await this.github.pullRequestFiles(prNumber);
       const rawDiff = await this.github.pullRequestDiff(prNumber);
+
+      // Dynamically pick the best reviewer if this is a default review.
+      let effectiveReviewerId = reviewerId;
+      if (reviewerId === this.config.defaultReviewer) {
+        const diffLines = (rawDiff.match(/\n/g) ?? []).length;
+        effectiveReviewerId = pickReviewerId({
+          files,
+          diffLines,
+          contractPaths: this.config.contractPaths,
+          fixRounds,
+        });
+      }
+
       const result = await reviewPullRequest({
         config: this.config,
         agentId,
-        reviewerId,
+        reviewerId: effectiveReviewerId,
         pr,
-        files: await this.github.pullRequestFiles(prNumber),
+        files,
         issue,
         diff: filterDiff(rawDiff),
         issueText: issue === undefined ? undefined : await this.github.issueText(issue),
@@ -259,18 +273,18 @@ export class Orchestrator {
         human: STATUS_LABELS.human,
         changes: STATUS_LABELS.changes,
       }[result.outcome];
-      await this.github.comment(prNumber, reviewComment(reviewerId, result));
+      await this.github.comment(prNumber, reviewComment(effectiveReviewerId, result));
       await this.github.setLabels(prNumber, [label], [STATUS_LABELS.review]);
       this.store.data.reviews[String(prNumber)] = {
         pr: prNumber,
         outcome: result.outcome,
-        reviewer: reviewerId,
+        reviewer: effectiveReviewerId,
         reasons: result.reasons,
         reviewerComments: result.reviewerComments,
         at: new Date().toISOString(),
         fixRounds,
       };
-      this.store.log("info", `PR #${prNumber} relue par ${reviewerId} : ${result.outcome}`);
+      this.store.log("info", `PR #${prNumber} relue par ${effectiveReviewerId} : ${result.outcome}`);
     } catch (error) {
       this.store.log("error", `Relecture PR #${prNumber} : ${(error as Error).message}`);
     } finally {
@@ -376,8 +390,6 @@ export class Orchestrator {
       logFile: run.logFile,
       timeoutMs: this.config.runTimeoutMinutes * 60_000,
       onLine: (line) => this.store.pushLine(agentId, line),
-      effort: agent.effort ?? "medium",
-      budgetUsd: agent.budgetUsd ?? 1.5,
     });
     this.running.set(agentId, { run, handle });
     this.store.data.runs.push(run);
@@ -385,21 +397,13 @@ export class Orchestrator {
       "info",
       `Agent ${agentId} lancé (${kind}) sur #${pr ?? issue}, branche ${branch}`,
     );
-    void handle.done.then(({ code, stdout }) => this.finish(run, code, stdout, adapter));
+    void handle.done.then(({ code }) => this.finish(run, code));
   }
 
-  private async finish(
-    run: RunRecord,
-    code: number,
-    stdout?: string,
-    adapter?: CliAdapter,
-  ): Promise<void> {
+  private async finish(run: RunRecord, code: number): Promise<void> {
     this.running.delete(run.agent);
     run.endedAt = new Date().toISOString();
     run.exitCode = code;
-    if (stdout && adapter) {
-      run.m = adapter.usage(stdout);
-    }
     try {
       const quotaDelay = quotaResetDelayMs(logTail(run.logFile));
       if (quotaDelay !== undefined) {
@@ -423,10 +427,7 @@ export class Orchestrator {
         if (review) review.fixRounds += 1;
         await this.github.setLabels(pr.number, [], [STATUS_LABELS.running]);
       }
-      const metricsStr = run.m
-        ? ` · ${run.m.turns ?? "?"} tours, ${(run.m.inputTokens ?? 0) + (run.m.cacheReadInputTokens ?? 0)} tokens, $${run.m.totalCostUsd.toFixed(2)}`
-        : "";
-      this.store.log("info", `Agent ${run.agent} terminé : PR #${pr.number}${metricsStr}`);
+      this.store.log("info", `Agent ${run.agent} terminé : PR #${pr.number}`);
       await this.refresh();
       // Read-only review starts on its own: it only validates and comments.
       await this.review(pr.number, this.config.defaultReviewer);
