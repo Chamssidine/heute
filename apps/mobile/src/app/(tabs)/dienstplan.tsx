@@ -33,11 +33,7 @@ export default function DienstplanScreen(): React.ReactElement {
 
             <View style={styles.listContainer}>
               {displayedDays.map((day, index) => (
-                <ShiftRow
-                  key={day.date}
-                  day={day}
-                  isLast={index === displayedDays.length - 1}
-                />
+                <ShiftRow key={day.date} day={day} isLast={index === displayedDays.length - 1} />
               ))}
             </View>
           </View>
