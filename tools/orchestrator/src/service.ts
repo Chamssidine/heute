@@ -529,6 +529,15 @@ export class Orchestrator {
       );
     } catch (error) {
       this.store.log("error", `Relecture PR #${prNumber} : ${(error as Error).message}`);
+      const broken = /BASE_BROKEN:([\s\S]*)/.exec((error as Error).message);
+      if (broken?.[1]) {
+        // Not the PR's fault: pause everything with the evidence, and let the review be redone.
+        const reason = `${baseBranch(this.config)} échoue déjà aux vérifications, aucun agent ne peut le corriger : ${broken[1].replace(/\s+/g, " ").trim().slice(0, 300)}`;
+        this.store.data.autopilot = { enabled: true, pausedReason: reason };
+        this.store.log("error", `Autopilote arrêté : ${reason}`);
+        await this.github.setLabels(prNumber, [], [STATUS_LABELS.review]).catch(() => undefined);
+        return;
+      }
       const quota = /QUOTA_REVIEW:(\d+)/.exec((error as Error).message);
       if (quota?.[1]) {
         // No verdict was given: wait for the reset instead of sending everything to the human.
