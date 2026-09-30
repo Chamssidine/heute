@@ -9,3 +9,10 @@ export { Banner, type BannerProps, type BannerVariant } from "./Banner";
 export { EmptyState, type EmptyStateProps } from "./EmptyState";
 export { Snackbar, type SnackbarProps } from "./Snackbar";
 export { ListRow, type ListRowProps } from "./ListRow";
+export {
+  TabIcon,
+  MaterialCommunityIcons,
+  type TabIconProps,
+  type MaterialCommunityIconName,
+  type MaterialCommunityIconsProps,
+} from "./tab-icons";

@@ -2,7 +2,7 @@ import React from "react";
 import { Tabs } from "expo-router";
 import { theme } from "../../lib/theme";
 import { strings } from "../../strings";
-import { MaterialCommunityIcons } from "./icons";
+import { MaterialCommunityIcons } from "../../components/ui/tab-icons";
 
 export default function TabsLayout(): React.ReactElement {
   return (
