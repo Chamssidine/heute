@@ -17,17 +17,6 @@ export const MEAL_TYPES: readonly MealType[] = [
 ] as const;
 
 /**
- * Libellés complets allemands des repas (docs/design/copy.md §7.1).
- */
-export const MEAL_LABELS: Record<MealType, string> = {
-  frueh: "Frühstück",
-  mittag: "Mittagessen",
-  abend: "Abendessen",
-  lunchpaket: "Lunchpaket",
-  grill: "Grillen",
-};
-
-/**
  * Libellés courts allemands pour l'affichage écran (screens.md §6.3, copy.md §7.1).
  */
 export const MEAL_SHORT_LABELS: Record<MealType, string> = {
@@ -37,16 +26,6 @@ export const MEAL_SHORT_LABELS: Record<MealType, string> = {
   lunchpaket: "LP",
   grill: "GR",
 };
-
-/**
- * Libellés des régimes et variantes selon docs/design/tokens.md §4.3 et copy.md §7.1.
- */
-export const DIET_LABELS = {
-  veg: "Vegetarisch",
-  vegan: "Vegan",
-  mos: "ohne Schweinefleisch",
-  al: "Allergien",
-} as const;
 
 /**
  * Décompte des régimes alimentaires (docs/design/tokens.md §4.3).
@@ -75,22 +54,23 @@ export type KitchenTotals = Record<MealType, MealTotal>;
 /**
  * Repas individuel au sein d'une réservation / groupe.
  * Si une heure spécifique est requise (ex. grill), elle est stockée en minutes depuis minuit.
+ * note et allergies sont stockés au niveau du repas conformément au schéma public.meal_counts.
  */
 export interface KitchenGroupMeal extends DietCounts {
   meal: MealType;
   count: number;
   time?: number | null;
+  note?: string | null;
+  allergies?: Record<string, number>;
 }
 
 /**
  * Détail d'un groupe / réservation pour la journée (screens.md §6.3).
+ * Les régimes, notes et allergies sont portés par chaque repas (meals[]).
  */
 export interface KitchenGroupDetail {
   matchcode: string;
   meals: KitchenGroupMeal[];
-  diets: DietCounts;
-  note?: string | null;
-  allergens?: Record<string, number>;
 }
 
 /**
@@ -123,25 +103,6 @@ export interface KitchenDay {
   noLunch: boolean;
   noDinner: boolean;
   updatedAt?: string;
-}
-
-/**
- * Calcule les régimes agrégés d'un groupe à partir de ses repas.
- */
-export function calculateGroupDiets(meals: readonly KitchenGroupMeal[]): DietCounts {
-  let veg = 0;
-  let vegan = 0;
-  let mos = 0;
-  let al = 0;
-
-  for (const m of meals) {
-    veg += m.veg;
-    vegan += m.vegan;
-    mos += m.mos;
-    al += m.al;
-  }
-
-  return { veg, vegan, mos, al };
 }
 
 /**
@@ -198,9 +159,9 @@ export function formatGroupMealsSummary(meals: readonly KitchenGroupMeal[]): str
 }
 
 /**
- * Formate les régimes et allergènes selon l'ordre strict : VEG · vegan · MOS · AL (tokens.md §4.3).
+ * Formate les régimes et allergies selon l'ordre strict : VEG · vegan · MOS · AL (tokens.md §4.3).
  */
-export function formatDietsSummary(diets: DietCounts, allergens?: Record<string, number>): string {
+export function formatDietsSummary(diets: DietCounts, allergies?: Record<string, number>): string {
   const parts: string[] = [];
 
   if (diets.veg > 0) parts.push(`VEG ${diets.veg}`);
@@ -208,8 +169,8 @@ export function formatDietsSummary(diets: DietCounts, allergens?: Record<string,
   if (diets.mos > 0) parts.push(`MOS ${diets.mos}`);
 
   if (diets.al > 0) {
-    if (allergens && Object.keys(allergens).length > 0) {
-      const details = Object.entries(allergens)
+    if (allergies && Object.keys(allergies).length > 0) {
+      const details = Object.entries(allergies)
         .map(([k]) => k.charAt(0).toUpperCase() + k.slice(1))
         .join(", ");
       parts.push(`AL ${diets.al} (${details})`);
@@ -224,7 +185,7 @@ export function formatDietsSummary(diets: DietCounts, allergens?: Record<string,
 /**
  * Construit un objet KitchenDay cohérent.
  */
-export function createKitchenDay(params: {
+function createKitchenDay(params: {
   date: string;
   groups: readonly KitchenGroupDetail[];
   menu: KitchenDayMenu;
@@ -264,6 +225,7 @@ const musterschuleMeals: KitchenGroupMeal[] = [
     vegan: 0,
     mos: 4,
     al: 0,
+    note: "1× Nudeln/Müsli",
   },
   {
     meal: "abend",
@@ -283,6 +245,7 @@ const tsvMeals: KitchenGroupMeal[] = [
     vegan: 2,
     mos: 4,
     al: 1,
+    allergies: { laktose: 1 },
   },
   {
     meal: "grill",
@@ -337,24 +300,18 @@ export const KITCHEN_FIXTURE_GROUPS: readonly KitchenGroupDetail[] = [
   {
     matchcode: "MUSTERSCHULE/40001",
     meals: musterschuleMeals,
-    diets: calculateGroupDiets(musterschuleMeals),
-    note: "1× Nudeln/Müsli",
   },
   {
     matchcode: "TSV MUSTER/40002",
     meals: tsvMeals,
-    diets: calculateGroupDiets(tsvMeals),
-    allergens: { laktose: 1 },
   },
   {
     matchcode: "TESTCHOR/40003",
     meals: testchorMeals,
-    diets: calculateGroupDiets(testchorMeals),
   },
   {
     matchcode: "Einzelgäste_27+",
     meals: einzelgaesteMeals,
-    diets: calculateGroupDiets(einzelgaesteMeals),
   },
 ];
 
@@ -408,12 +365,6 @@ export const kitchenDayNoLunchFixture: KitchenDay = createKitchenDay({
           al: 0,
         },
       ],
-      diets: {
-        veg: 2,
-        vegan: 0,
-        mos: 0,
-        al: 0,
-      },
     },
   ],
   menu: {

@@ -2,14 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { useKitchenDay } from "./hooks.ts";
 import {
-  calculateGroupDiets,
   calculateKitchenTotals,
-  DIET_LABELS,
   formatDietsSummary,
   formatGroupMealsSummary,
   kitchenDayFixture,
   kitchenDayNoLunchFixture,
-  MEAL_LABELS,
   MEAL_SHORT_LABELS,
   MEAL_TYPES,
   type KitchenGroupDetail,
@@ -22,14 +19,6 @@ describe("features/kitchen (P2-06 [L])", () => {
       assert.deepEqual(MEAL_TYPES, ["frueh", "mittag", "abend", "lunchpaket", "grill"]);
     });
 
-    it("définit les libellés allemands exacts selon docs/design/copy.md §7.1", () => {
-      assert.equal(MEAL_LABELS.frueh, "Frühstück");
-      assert.equal(MEAL_LABELS.mittag, "Mittagessen");
-      assert.equal(MEAL_LABELS.abend, "Abendessen");
-      assert.equal(MEAL_LABELS.lunchpaket, "Lunchpaket");
-      assert.equal(MEAL_LABELS.grill, "Grillen");
-    });
-
     it("définit les libellés courts pour l'affichage selon screens.md §6.3", () => {
       assert.equal(MEAL_SHORT_LABELS.frueh, "Früh");
       assert.equal(MEAL_SHORT_LABELS.mittag, "Mittag");
@@ -37,30 +26,9 @@ describe("features/kitchen (P2-06 [L])", () => {
       assert.equal(MEAL_SHORT_LABELS.lunchpaket, "LP");
       assert.equal(MEAL_SHORT_LABELS.grill, "GR");
     });
-
-    it("définit les libellés des régimes selon tokens.md §4.3", () => {
-      assert.equal(DIET_LABELS.veg, "Vegetarisch");
-      assert.equal(DIET_LABELS.vegan, "Vegan");
-      assert.equal(DIET_LABELS.mos, "ohne Schweinefleisch");
-      assert.equal(DIET_LABELS.al, "Allergien");
-    });
   });
 
   describe("model.ts - fonctions pures de calcul et formatage", () => {
-    it("calcule correctement les régimes d'un groupe", () => {
-      const diets = calculateGroupDiets([
-        { meal: "mittag", count: 10, veg: 2, vegan: 1, mos: 3, al: 1 },
-        { meal: "abend", count: 10, veg: 3, vegan: 0, mos: 2, al: 0 },
-      ]);
-
-      assert.deepEqual(diets, {
-        veg: 5,
-        vegan: 1,
-        mos: 5,
-        al: 1,
-      });
-    });
-
     it("calcule les totaux par repas", () => {
       const groups: KitchenGroupDetail[] = [
         {
@@ -69,7 +37,6 @@ describe("features/kitchen (P2-06 [L])", () => {
             { meal: "frueh", count: 20, veg: 2, vegan: 1, mos: 0, al: 0 },
             { meal: "lunchpaket", count: 15, veg: 1, vegan: 0, mos: 2, al: 0 },
           ],
-          diets: { veg: 3, vegan: 1, mos: 2, al: 0 },
         },
       ];
 
@@ -126,20 +93,20 @@ describe("features/kitchen (P2-06 [L])", () => {
       assert.equal(hasGrillGroup, true);
     });
 
-    it("comprend une note courte « 1× Nudeln/Müsli » au niveau du groupe", () => {
-      const hasNote = kitchenDayFixture.groups.some((g) => g.note?.includes("1× Nudeln/Müsli"));
+    it("comprend une note courte « 1× Nudeln/Müsli » sur le repas lunchpaket", () => {
+      const hasNote = kitchenDayFixture.groups.some((g) =>
+        g.meals.some((m) => m.note?.includes("1× Nudeln/Müsli")),
+      );
       assert.equal(hasNote, true);
     });
 
-    it("utilise uniquement des données fictives et matchcodes inventés", () => {
+    it("respecte la contrainte de longueur maximale de 120 caractères pour les notes", () => {
       for (const group of kitchenDayFixture.groups) {
-        assert.ok(
-          group.matchcode.startsWith("MUSTER") ||
-            group.matchcode.startsWith("TSV") ||
-            group.matchcode.startsWith("TEST") ||
-            group.matchcode.startsWith("Einzelgäste"),
-          `Matchcode non conforme : ${group.matchcode}`,
-        );
+        for (const meal of group.meals) {
+          if (meal.note) {
+            assert.ok(meal.note.length <= 120, `Note trop longue : ${meal.note}`);
+          }
+        }
       }
     });
 
@@ -219,24 +186,19 @@ describe("features/kitchen (P2-06 [L])", () => {
       assert.equal(kitchenDayFixture.totals.abend.al, 1);
     });
 
-    it("valide la cohérence interne des régimes de chaque groupe", () => {
+    it("valide la cohérence interne des régimes de chaque repas de groupe", () => {
       for (const group of kitchenDayFixture.groups) {
-        let sumVeg = 0;
-        let sumVegan = 0;
-        let sumMos = 0;
-        let sumAl = 0;
-
         for (const m of group.meals) {
-          sumVeg += m.veg;
-          sumVegan += m.vegan;
-          sumMos += m.mos;
-          sumAl += m.al;
+          assert.ok(m.count >= 0, `Count négatif pour ${group.matchcode}`);
+          assert.ok(m.veg >= 0 && m.veg <= m.count, `Veg invalide pour ${group.matchcode}`);
+          assert.ok(m.vegan >= 0 && m.vegan <= m.count, `Vegan invalide pour ${group.matchcode}`);
+          assert.ok(
+            m.veg + m.vegan <= m.count,
+            `Veg + Vegan dépasse total pour ${group.matchcode}`,
+          );
+          assert.ok(m.mos >= 0 && m.mos <= m.count, `MOS dépasse total pour ${group.matchcode}`);
+          assert.ok(m.al >= 0 && m.al <= m.count, `AL dépasse total pour ${group.matchcode}`);
         }
-
-        assert.equal(group.diets.veg, sumVeg);
-        assert.equal(group.diets.vegan, sumVegan);
-        assert.equal(group.diets.mos, sumMos);
-        assert.equal(group.diets.al, sumAl);
       }
     });
   });
