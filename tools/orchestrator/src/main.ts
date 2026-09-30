@@ -68,6 +68,7 @@ const planNextTick = (): void => {
   orchestrator.nextTickAt = new Date(Date.now() + config.refreshSeconds * 1000).toISOString();
 };
 planNextTick();
+setInterval(() => void orchestrator.refreshWork(), 10_000);
 void orchestrator.autopilotTick();
 setInterval(() => {
   planNextTick();

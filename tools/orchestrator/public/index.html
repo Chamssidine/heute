@@ -792,6 +792,18 @@
         background: var(--ok-text);
         transition: width 0.5s ease;
       }
+      .track > .part {
+        background: var(--warn-border);
+        opacity: 0.85;
+      }
+      .track {
+        display: flex;
+      }
+      .work {
+        font-size: 11px;
+        color: var(--text-2);
+        font-variant-numeric: tabular-nums;
+      }
       .minibar {
         display: grid;
         grid-template-columns: 1fr auto;
@@ -1895,12 +1907,26 @@
                       h("span", {
                         style: `width:${mine.total ? (mine.done / mine.total) * 100 : 0}%`,
                       }),
+                      a.run
+                        ? h("span", {
+                            class: "part",
+                            style: `width:${mine.total ? (1 / mine.total) * 100 : 0}%`,
+                          })
+                        : null,
                     ),
                     h(
                       "span",
                       {},
                       `${mine.done}/${mine.total} · ${mine.total ? Math.round((mine.done / mine.total) * 100) : 0} %`,
                     ),
+                  )
+                : null,
+              a.work
+                ? h(
+                    "div",
+                    { class: "work" },
+                    `étape ${a.work.steps} · ${a.work.changed} fichier${a.work.changed > 1 ? "s" : ""} modifié${a.work.changed > 1 ? "s" : ""} · ${a.work.commits} commit${a.work.commits > 1 ? "s" : ""}`,
+                    a.work.changed + a.work.commits === 0 ? " · il lit le code" : " · il écrit",
                   )
                 : null,
               last
