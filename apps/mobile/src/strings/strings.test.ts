@@ -53,6 +53,19 @@ test("auth and profil strings match docs/design/screens.md §6.6", () => {
   assert.equal(strings.profil.departments.kueche, "Küche");
 });
 
+test("kitchen strings match docs/design/screens.md §6.3 and copy.md §7", () => {
+  assert.equal(
+    strings.kitchen.allergyBanner,
+    "Änderungen vorbehalten – bei Allergien Küchenpersonal fragen",
+  );
+  assert.equal(strings.kitchen.emptyDay, "Für diesen Tag sind keine Gäste eingetragen.");
+  assert.equal(strings.kitchen.groupsTitle, "Gruppen");
+  assert.equal(strings.kitchen.menuTitle, "Menü");
+  assert.equal(strings.kitchen.menuNotEntered, "Menü noch nicht eingetragen");
+  assert.equal(strings.meals.noLunch, "Kein Mittagessen");
+  assert.equal(strings.meals.noDinner, "Kein Abendessen");
+});
+
 test("today strings match docs/design/screens.md §6.1", () => {
   assert.equal(strings.today.myShift, "Mein Dienst");
   assert.equal(strings.today.myTasks, "Meine Aufgaben");
