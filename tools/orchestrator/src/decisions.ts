@@ -67,6 +67,31 @@ export function nextIssue(
 
 export type ReviewOutcome = "ready" | "human" | "changes";
 
+export type ErrorCode =
+  | "SCOPE_VIOLATION"
+  | "CONTRACT_CHANGE"
+  | "TYPECHECK_FAIL"
+  | "LINT_FAIL"
+  | "TEST_FAIL"
+  | "REVIEW_REJECT"
+  | "NO_VERDICT"
+  | "CMD_REFUSED"
+  | "SECURITY_CONCERN";
+
+// Limites de réparation automatique par type d'erreur.
+// Au-delà : attente humaine, pas de relecture ni correction auto.
+export const ERROR_FIX_LIMITS: Record<ErrorCode, number> = {
+  SCOPE_VIOLATION: 1,
+  CONTRACT_CHANGE: 0,
+  TYPECHECK_FAIL: 3,
+  LINT_FAIL: 3,
+  TEST_FAIL: 3,
+  REVIEW_REJECT: 2,
+  NO_VERDICT: 1,
+  CMD_REFUSED: 3,
+  SECURITY_CONCERN: 0,
+};
+
 export interface ReviewInput {
   files: readonly string[];
   allowedPaths: readonly string[];
@@ -75,11 +100,13 @@ export interface ReviewInput {
   reviewerApproved: boolean;
   fixRoundsDone: number;
   maxFixRounds: number;
+  errorCode?: ErrorCode;
 }
 
 export interface ReviewDecision {
   outcome: ReviewOutcome;
   reasons: string[];
+  errorCode?: ErrorCode;
 }
 
 export function decideReview(input: ReviewInput): ReviewDecision {
@@ -96,13 +123,23 @@ export function decideReview(input: ReviewInput): ReviewDecision {
   }
 
   if (reasons.length > 0) {
-    if (input.fixRoundsDone >= input.maxFixRounds) {
+    // Vérifier la limite de réparation si un code d'erreur est défini
+    if (input.errorCode) {
+      const limit = ERROR_FIX_LIMITS[input.errorCode];
+      if (input.fixRoundsDone >= limit) {
+        return {
+          outcome: "human",
+          reasons: [...reasons, `Limite de réparation pour ${input.errorCode} atteinte`],
+          errorCode: input.errorCode,
+        };
+      }
+    } else if (input.fixRoundsDone >= input.maxFixRounds) {
       return {
         outcome: "human",
         reasons: [...reasons, "Nombre maximal de corrections atteint"],
       };
     }
-    return { outcome: "changes", reasons };
+    return { outcome: "changes", reasons, errorCode: input.errorCode };
   }
 
   const contract = input.files.filter((f) => matchesAny(f, input.contractPaths));
@@ -110,6 +147,7 @@ export function decideReview(input: ReviewInput): ReviewDecision {
     return {
       outcome: "human",
       reasons: [`Contrat modifié : ${contract.join(", ")}`],
+      errorCode: "CONTRACT_CHANGE",
     };
   }
   return { outcome: "ready", reasons: ["Toutes les vérifications passent : prête à merger"] };
