@@ -15,6 +15,7 @@ import {
 } from "../lib/schedule.ts";
 import { getSupabase } from "../lib/supabase.ts";
 import { de } from "../strings/de.ts";
+import { ShiftDialog, type ShiftTarget } from "./ShiftDialog.tsx";
 
 type Data = { employees: ScheduleEmployee[]; shifts: ScheduleShift[] };
 type LoadState = { status: "loading" } | { status: "error" } | { status: "ready"; data: Data };
@@ -32,7 +33,7 @@ async function loadMonth(month: string): Promise<Data> {
       .order("display_name"),
     supabase
       .from("shifts")
-      .select("employee_id, date, type, start1, end1, start2, end2, break_min, note")
+      .select("id, employee_id, date, type, start1, end1, start2, end2, break_min, note")
       .gte("date", first)
       .lte("date", last),
   ]);
@@ -55,6 +56,8 @@ async function loadMonth(month: string): Promise<Data> {
 export function ScheduleGrid() {
   const [month, setMonth] = useState(() => currentMonth());
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [reloadCount, setReloadCount] = useState(0);
+  const [target, setTarget] = useState<ShiftTarget | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,7 +78,7 @@ export function ScheduleGrid() {
     return () => {
       cancelled = true;
     };
-  }, [month]);
+  }, [month, reloadCount]);
 
   return (
     <Stack>
@@ -109,16 +112,34 @@ export function ScheduleGrid() {
         </Alert>
       )}
       {state.status === "ready" &&
-        (state.data.employees.length === 0 || state.data.shifts.length === 0 ? (
+        (state.data.employees.length === 0 ? (
           <Text>{de.schedule.empty}</Text>
         ) : (
-          <Grid month={month} data={state.data} />
+          <Grid month={month} data={state.data} onSelect={setTarget} />
         ))}
+      {target && (
+        <ShiftDialog
+          target={target}
+          onClose={() => setTarget(null)}
+          onSaved={() => {
+            setTarget(null);
+            setReloadCount((n) => n + 1);
+          }}
+        />
+      )}
     </Stack>
   );
 }
 
-function Grid({ month, data }: { month: string; data: Data }) {
+function Grid({
+  month,
+  data,
+  onSelect,
+}: {
+  month: string;
+  data: Data;
+  onSelect: (target: ShiftTarget) => void;
+}) {
   const days = useMemo(() => monthDays(month), [month]);
   const byEmployee = useMemo(() => {
     const map = new Map<string, Map<string, ScheduleShift>>();
@@ -160,12 +181,23 @@ function Grid({ month, data }: { month: string; data: Data }) {
               </Table.Td>
               <Table.Td fw={d.isSunday ? 700 : undefined}>{d.weekday}</Table.Td>
               {data.employees.flatMap((e) => {
-                const cell = shiftCell(byEmployee.get(e.id)?.get(d.date));
+                const shift = byEmployee.get(e.id)?.get(d.date);
+                const cell = shiftCell(shift);
+                const open = () => onSelect({ employee: e, date: d.date, shift });
+                const props = { onClick: open, style: { cursor: "pointer" } };
                 return [
-                  <Table.Td key={`${e.id}-s`}>{cell.start}</Table.Td>,
-                  <Table.Td key={`${e.id}-e`}>{cell.end}</Table.Td>,
-                  <Table.Td key={`${e.id}-c`}>{cell.code}</Table.Td>,
-                  <Table.Td key={`${e.id}-i`}>{cell.ist}</Table.Td>,
+                  <Table.Td key={`${e.id}-s`} {...props}>
+                    {cell.start}
+                  </Table.Td>,
+                  <Table.Td key={`${e.id}-e`} {...props}>
+                    {cell.end}
+                  </Table.Td>,
+                  <Table.Td key={`${e.id}-c`} {...props}>
+                    {cell.code}
+                  </Table.Td>,
+                  <Table.Td key={`${e.id}-i`} {...props}>
+                    {cell.ist}
+                  </Table.Td>,
                 ];
               })}
             </Table.Tr>
