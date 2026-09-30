@@ -1,2 +1,2 @@
-export { strings, type Strings } from "./de";
-export { default } from "./de";
+export { strings, type Strings } from "./de.ts";
+export { default } from "./de.ts";

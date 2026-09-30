@@ -63,7 +63,20 @@ export const strings = {
   },
   meals: {
     noLunch: "Kein Mittagessen",
+    noDinner: "Kein Abendessen",
     modified: (time: string, prev: number | string) => `Geändert ${time} · vorher ${prev}`,
+  },
+  kitchen: {
+    allergyBanner: "Änderungen vorbehalten – bei Allergien Küchenpersonal fragen",
+    emptyDay: "Für diesen Tag sind keine Gäste eingetragen.",
+    groupsTitle: "Gruppen",
+    menuTitle: "Menü",
+    menuNotEntered: "Menü noch nicht eingetragen",
+    today: "Heute",
+    previousDay: "Vorheriger Tag",
+    nextDay: "Nächster Tag",
+    dessertPrefix: "Nachspeise",
+    vegPrefix: "Veg",
   },
   chips: {
     dienst: "Dienst",
