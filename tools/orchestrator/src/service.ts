@@ -836,6 +836,7 @@ export class Orchestrator {
     if (this.ticking) return;
     this.ticking = true;
     try {
+      await this.clearOrphanRunning();
       await this.closeDeliveredIssues();
       await this.retargetPullRequests();
       await this.maintainRelease();
@@ -927,6 +928,31 @@ export class Orchestrator {
       return `Budget du jour atteint (${cost.toFixed(2)} $ sur ${ap.dailyBudgetUsd} $)`;
     }
     return undefined;
+  }
+
+  // « en-cours » on a task or PR that no agent is working on (a run cut by a restart, a crash)
+  // would hide it from the queue for ever: release it.
+  private async clearOrphanRunning(): Promise<void> {
+    if (this.launching.size > 0) return;
+    const busy = new Set<number>();
+    for (const { run } of this.running.values()) {
+      busy.add(run.issue);
+      if (run.pr !== undefined) busy.add(run.pr);
+    }
+    const orphans = [
+      ...this.store.live.issues.filter(
+        (i) => i.state === "OPEN" && i.labels.includes(STATUS_LABELS.running),
+      ),
+      ...this.store.live.prs.filter((p) => p.labels.includes(STATUS_LABELS.running)),
+    ].filter((x) => !busy.has(x.number));
+    for (const item of orphans) {
+      await this.github.setLabels(item.number, [], [STATUS_LABELS.running]);
+      this.store.log(
+        "warn",
+        `#${item.number} : étiquette « en-cours » orpheline retirée (aucun agent dessus)`,
+      );
+    }
+    if (orphans.length > 0) await this.refresh();
   }
 
   // An issue whose branch was merged is delivered, whoever merged it and into which branch
