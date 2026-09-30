@@ -62,5 +62,12 @@ async function tick(): Promise<void> {
   }
   await orchestrator.autopilotTick();
 }
+const planNextTick = (): void => {
+  orchestrator.nextTickAt = new Date(Date.now() + config.refreshSeconds * 1000).toISOString();
+};
+planNextTick();
 void orchestrator.autopilotTick();
-setInterval(() => void tick(), config.refreshSeconds * 1000);
+setInterval(() => {
+  planNextTick();
+  void tick();
+}, config.refreshSeconds * 1000);

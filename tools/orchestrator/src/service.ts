@@ -144,6 +144,19 @@ export class Orchestrator {
   private readonly reviewQueue: { pr: number; reviewer: string }[] = [];
   private readonly interrupted: RunRecord[] = [];
   private ticking = false;
+  // What the orchestrator itself is doing right now (not the agents): shown in the status bar.
+  private readonly activities = new Map<string, { text: string; since: string }>();
+  nextTickAt: string | undefined;
+
+  private begin(key: string, text: string): void {
+    this.activities.set(key, { text, since: new Date().toISOString() });
+    this.store.emit("change");
+  }
+
+  private end(key: string): void {
+    this.activities.delete(key);
+    this.store.emit("change");
+  }
 
   // Local mode: tasks and PRs are JSON records, branches never leave this machine.
   private isLocal(): boolean {
@@ -218,6 +231,7 @@ export class Orchestrator {
       throw new Error(`L'agent ${agentId} travaille déjà`);
     this.assertQuotaAvailable(agentId);
     this.launching.add(agentId);
+    this.begin(`prep:${agentId}`, `Préparation du dossier de l'agent ${agentId}`);
     try {
       await this.refresh();
       const issue = nextIssue(agent.label, this.store.live.issues, this.issuesWithOpenPr());
@@ -263,6 +277,7 @@ export class Orchestrator {
       );
     } finally {
       this.launching.delete(agentId);
+      this.end(`prep:${agentId}`);
     }
   }
 
@@ -273,10 +288,15 @@ export class Orchestrator {
       throw new Error(`L'agent ${agentId} travaille déjà`);
     this.assertQuotaAvailable(agentId);
     this.launching.add(agentId);
+    this.begin(
+      `prep:${agentId}`,
+      `Préparation de la correction de la PR #${pr.number} (agent ${agentId})`,
+    );
     try {
       await this.sendBackNow(pr, agentId, humanNote);
     } finally {
       this.launching.delete(agentId);
+      this.end(`prep:${agentId}`);
     }
   }
 
@@ -389,6 +409,7 @@ export class Orchestrator {
     const fixRounds = previous?.fixRounds ?? 0;
     this.reviewing = prNumber;
     this.store.setActivity(`Relecture de la PR #${prNumber}`);
+    this.begin("review", `Relecture de la PR #${prNumber} par le relecteur`);
     try {
       await ensureWorktree(this.repoDir, this.config.reviewWorktree);
       await this.github.setLabels(prNumber, [STATUS_LABELS.review], this.labelsOn(pr));
@@ -489,6 +510,7 @@ export class Orchestrator {
     } finally {
       this.reviewing = undefined;
       this.store.setActivity(undefined);
+      this.end("review");
       await this.refresh().catch(() => undefined);
       this.startNextQueuedReview();
       void this.autopilotTick();
@@ -541,6 +563,15 @@ export class Orchestrator {
   }
 
   async merge(prNumber: number): Promise<void> {
+    this.begin("merge", `Fusion de la PR #${prNumber}`);
+    try {
+      await this.mergeNow(prNumber);
+    } finally {
+      this.end("merge");
+    }
+  }
+
+  private async mergeNow(prNumber: number): Promise<void> {
     if (this.isLocal() && this.release.pr === prNumber) {
       await this.github.mergeRelease(prNumber);
       this.store.log("info", `Publication #${prNumber} mergée par l'humain`);
@@ -825,6 +856,7 @@ export class Orchestrator {
     const prod = productionBranch(this.config);
     if (Date.now() - this.lastReleaseCheck < RELEASE_CHECK_MS) return;
     this.lastReleaseCheck = Date.now();
+    this.begin("release", `Synchronisation avec GitHub (${base} ↔ ${prod})`);
     try {
       const result = await local.publishBase();
       if (result.conflict) {
@@ -849,6 +881,8 @@ export class Orchestrator {
       this.release = { ahead: result.ahead, pr };
     } catch (error) {
       this.autoError("release", (error as Error).message);
+    } finally {
+      this.end("release");
     }
   }
 
@@ -956,6 +990,10 @@ export class Orchestrator {
     // otherwise the autopilot hands it another task in the same folder while it is validated.
     this.launching.add(run.agent);
     this.running.delete(run.agent);
+    this.begin(
+      `check:${run.agent}`,
+      `Vérification du travail de l'agent ${run.agent} (#${run.issue}) : typecheck, lint, tests`,
+    );
     run.endedAt = new Date().toISOString();
     run.exitCode = code;
     try {
@@ -1012,6 +1050,7 @@ export class Orchestrator {
       this.store.log("error", `Fin de l'agent ${run.agent} : ${(error as Error).message}`);
     } finally {
       this.launching.delete(run.agent);
+      this.end(`check:${run.agent}`);
       this.store.save();
     }
   }
@@ -1244,6 +1283,36 @@ export class Orchestrator {
     return id;
   }
 
+  // What the orchestrator is doing, or why it is idle: the answer to « what is it up to? ».
+  private statusView(): unknown {
+    const { data, live } = this.store;
+    const autopilot = data.autopilot;
+    const waitingOnHuman = live.prs.filter(
+      (p) => p.labels.includes(STATUS_LABELS.ready) || p.labels.includes(STATUS_LABELS.human),
+    ).length;
+    let idle: string | undefined;
+    if (this.activities.size === 0 && this.running.size === 0) {
+      if (autopilot?.enabled === false) idle = "Autopilote arrêté : rien ne se lance tout seul";
+      else if (autopilot?.pausedReason) idle = `En pause : ${autopilot.pausedReason}`;
+      else if (Object.values(data.quotaUntil ?? {}).some((u) => activeQuota(u)))
+        idle = "En attente de la fin d'un quota";
+      else if (waitingOnHuman > 0) idle = `Au repos : ${waitingOnHuman} PR attendent ta décision`;
+      else idle = "Au repos : aucune tâche prête pour les agents";
+    }
+    return {
+      items: [...this.activities.entries()].map(([key, a]) => ({ key, ...a })),
+      agents: [...this.running.entries()].map(([id, r]) => ({
+        id,
+        kind: r.run.kind,
+        issue: r.run.issue,
+        since: r.run.startedAt,
+      })),
+      idle,
+      nextTickAt: this.nextTickAt,
+      tickSeconds: this.config.refreshSeconds,
+    };
+  }
+
   // ---- View for the dashboard -------------------------------------------------------------
 
   view(): unknown {
@@ -1300,6 +1369,7 @@ export class Orchestrator {
       },
       reviewLines: live.liveLines["review"] ?? [],
       agents,
+      status: this.statusView(),
       autopilot: {
         enabled: data.autopilot?.enabled ?? true,
         pausedReason: data.autopilot?.pausedReason,
