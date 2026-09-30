@@ -1,6 +1,5 @@
-import { ComingSoon } from "../../components/ComingSoon.tsx";
-import { de } from "../../strings/de.ts";
+import { MenuGrid } from "../../components/MenuGrid.tsx";
 
 export default function Page() {
-  return <ComingSoon title={de.nav.menu} />;
+  return <MenuGrid />;
 }
